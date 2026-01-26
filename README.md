@@ -70,10 +70,11 @@ Este script atua **somente na interface do usuário**, automatizando essas taref
 ## 🚀 Instalação
 
 1. Instale a extensão **Tampermonkey** (Chrome ou Edge)
-2. Sete as permissões conforme na imagem: <img width="643" height="934" alt="image" src="https://github.com/user-attachments/assets/5130c99c-e807-4222-bec7-57ab64f3dff8" />
-3. Abra uma nova janela do navegador e Acesse o link abaixo
-4. Clique em **Install**
+2. Sete as permissões conforme na imagem abaixo:
+3. <img width="643" height="934" alt="image" src="https://github.com/user-attachments/assets/5130c99c-e807-4222-bec7-57ab64f3dff8" />
+4. Abra uma nova janela do navegador e Acesse o link abaixo:
+5. 👉 Link de instalação direta: https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
+6. Clique em **Install**
 
-👉 Link de instalação direta: https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
 
 
