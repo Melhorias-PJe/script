@@ -4,6 +4,26 @@ Este projeto consiste em um **script de automação para o sistema PJe (1º Grau
 
 O objetivo do script é **reduzir cliques manuais**, **padronizar escolhas recorrentes** e **agilizar o trabalho do servidor**, sem alterar dados processuais ou interferir no funcionamento interno do sistema.
 
+> ⚠️ **Importante**: este projeto **não é um bot**, não executa atos processuais automaticamente e não substitui a atuação do servidor.
+
+---
+
+## 🧠 Natureza do projeto (esclarecimento importante)
+
+Este script **não funciona como um bot ou robô de execução automática**.
+
+Ele atua como uma **ferramenta de apoio ao usuário**, baseada em **pensamento computacional e análise de padrões recorrentes**, auxiliando na **configuração dos expedientes** a partir de comportamentos comuns observados no uso diário do PJe.
+
+Em termos práticos, o script:
+- observa o estado da tela
+- identifica padrões previsíveis (ex.: campos em branco, opções padrão, fluxos repetidos)
+- **sugere e aplica configurações na interface**, sempre permitindo intervenção e revisão do usuário
+
+Nenhuma ação é executada sem que o servidor:
+- visualize a tela
+- confirme as informações
+- finalize o ato processual manualmente
+
 ---
 
 ## 🎯 Qual problema o projeto resolve?
@@ -18,7 +38,7 @@ No uso diário do PJe, o servidor precisa repetir várias ações manuais, como:
 
 Essas ações, embora simples, **consomem tempo**, aumentam o risco de erro e tornam o fluxo de trabalho mais lento.
 
-Este script atua **somente na interface do usuário**, automatizando essas tarefas repetitivas de forma segura e transparente.
+Este script atua **somente na interface do usuário**, automatizando essas tarefas repetitivas de forma segura, transparente e reversível.
 
 ---
 
@@ -57,24 +77,32 @@ Este script atua **somente na interface do usuário**, automatizando essas taref
 
 ---
 
-## 🔒 Segurança e limites
+## 🔒 Segurança, limites e responsabilidade
 
-- ❌ O script **não altera dados processuais**
-- ❌ Não executa ações no backend do PJe
+- ❌ O script **não salva, altera ou transmite arquivos do processo**
+- ❌ Não executa comandos no backend do PJe
+- ❌ Não pratica atos processuais de forma autônoma
 - ❌ Não coleta nem envia informações
-- ✅ Atua exclusivamente no navegador do usuário
+- ✅ Atua exclusivamente na **camada visual (frontend)** do navegador
+- ✅ Serve apenas como **auxílio à configuração dos atos**
 - ✅ Pode ser removido a qualquer momento pelo Tampermonkey
+
+A responsabilidade pela conferência, validação e finalização do ato processual permanece **integralmente com o usuário**.
 
 ---
 
 ## 🚀 Instalação
 
 1. Instale a extensão **Tampermonkey** (Chrome ou Edge)
-2. Sete as permissões conforme na imagem abaixo:
+2. Configure as permissões conforme a imagem abaixo:
 3. <img width="643" height="934" alt="image" src="https://github.com/user-attachments/assets/5130c99c-e807-4222-bec7-57ab64f3dff8" />
-4. Abra uma nova janela do navegador e Acesse o link abaixo:
-5. 👉 Link de instalação direta: https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
-6. Clique em **Install**
+4. Abra uma nova janela do navegador
+5. Acesse o link abaixo:
+6. 👉 https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
+7. Clique em **Install**
 
+---
 
+## 📄 Licença
 
+Este projeto é distribuído sob a licença **Apache License 2.0**.
