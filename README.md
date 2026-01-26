@@ -73,5 +73,6 @@ Este script atua **somente na interface do usuário**, automatizando essas taref
 2. Acesse o link abaixo
 3. Clique em **Install**
 
-👉 Link de instalação direta:
+👉 Link de instalação direta: https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
+
 
