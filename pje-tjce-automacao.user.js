@@ -1,11 +1,10 @@
 // ==UserScript==
-// @name         PJe TJCE – Automação de Expedientes
-// @namespace    https://github.com/Melhorias-PJe/script
-// @version      1.0.0
-// @description  Automação do PJe TJCE para ganho de produtividade nos expedientes.
+// @name         PJe TJCE - Automação Unificada (Select + Padrões + Prazo + Advogados + Agrupar + Copiar ID)
+// @namespace    local.tjce.pje.unified.automacao
+// @version      1.0.2
+// @description  Unifica: Select nativo (sem Select2), Padrões (Intimação/Diário), Prazo rápido (linha+topo), Botões Advogados Autor/Réu + Auto Mostrar Todos, Agrupar com (última opção só no Diário Eletrônico) e Copiar ID com ícone padrão do PJe. Toast discreto (inferior direito) e 1 scheduler/observer global.
 // @match        https://pje.tjce.jus.br/pje1grau/*
-// @updateURL    https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
-// @downloadURL  https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -17,9 +16,10 @@
    * ------------------------------------------------------------------ */
   const CONFIG = {
     DEBUG: false,               // true => mais logs no console
-    TOAST_TIMEOUT_MS: 6500,     // duração padrão do toast
-    TOAST_MAX: 4,               // máximo de toasts simultâneos
-    OBS_DEBOUNCE_MS: 0,         // 0 => requestAnimationFrame (recomendado)
+    TOAST_TIMEOUT_MS: 2500,     // duração padrão do toast
+    TOAST_MAX: 2,               // máximo de toasts simultâneos
+    TOAST_MODE: "WARN_ONLY",    // "ALL" | "WARN_ONLY" | "OFF"
+    OBS_DEBOUNCE_MS: 0,         // 0 => requestAnimationFrame
     AUTO_MOSTRAR_TODOS: true,   // tenta clicar automaticamente em "Mostrar todos"
   };
 
@@ -59,10 +59,20 @@
 
   /* ------------------------------------------------------------------
    * Toast (discreto) + Anti-spam de mensagens
+   *  - Inferior direito ✅
+   *  - WARN_ONLY por padrão ✅
+   *  - Suporta force:true (para ações do usuário, ex: "ID copiado") ✅
    * ------------------------------------------------------------------ */
   const Toast = (() => {
     const SPAM = new Set();
     const ID = "pje-unified-toast-host";
+
+    function canShow(level, force) {
+      if (CONFIG.TOAST_MODE === "OFF") return false;
+      if (force) return true;
+      if (CONFIG.TOAST_MODE === "WARN_ONLY") return level === "warn" || level === "error";
+      return true; // ALL
+    }
 
     function ensureHost() {
       let host = document.getElementById(ID);
@@ -72,7 +82,7 @@
       host.id = ID;
       host.style.cssText = [
         "position:fixed",
-        "top:12px",
+        "bottom:12px",
         "right:12px",
         "z-index:2147483647",
         "display:flex",
@@ -123,7 +133,7 @@
         .pje-toast.error { border-left: 4px solid #ff4d4d; }
 
         @keyframes pjeToastIn {
-          from { transform: translateY(-6px); opacity: 0.3; }
+          from { transform: translateY(6px); opacity: 0.3; }
           to   { transform: translateY(0);   opacity: 1; }
         }
       `;
@@ -132,14 +142,15 @@
       return host;
     }
 
-    function push({ level = "info", title = "PJe Automação", message = "", meta = "", key = "" }) {
+    function push({ level = "info", title = "PJe Automação", message = "", meta = "", key = "", force = false }) {
+      if (!canShow(level, force)) return;
+
       const spamKey = key || `${level}|${title}|${message}|${meta}`;
       if (SPAM.has(spamKey)) return;
       SPAM.add(spamKey);
 
       const host = ensureHost();
 
-      // limita quantidade visível
       while (host.children.length >= CONFIG.TOAST_MAX) {
         host.removeChild(host.firstChild);
       }
@@ -155,9 +166,7 @@
       close.className = "t-close";
       close.textContent = "×";
       close.title = "Fechar";
-      close.addEventListener("click", () => {
-        try { box.remove(); } catch (e) {}
-      });
+      close.addEventListener("click", () => { try { box.remove(); } catch (e) {} });
       head.appendChild(close);
 
       const body = document.createElement("div");
@@ -174,7 +183,6 @@
       }
 
       host.appendChild(box);
-
       setTimeout(() => { try { box.remove(); } catch (e) {} }, CONFIG.TOAST_TIMEOUT_MS);
     }
 
@@ -265,9 +273,7 @@ span.select2-container--open{
   display: none !important;
 }
 
-.select2-dropdown{
-  display: none !important;
-}
+.select2-dropdown{ display: none !important; }
       `;
 
       const style = document.createElement("style");
@@ -297,11 +303,8 @@ span.select2-container--open{
     }
 
     function apply() {
-      try {
-        normalizeSelects();
-      } catch (e) {
-        Toast.failure(NAME, e, "apply");
-      }
+      try { normalizeSelects(); }
+      catch (e) { Toast.failure(NAME, e, "apply"); }
     }
 
     return { NAME, init, apply };
@@ -320,7 +323,6 @@ span.select2-container--open{
         try {
           const opts = Array.from(sel.options || []);
           if (!opts.length) return;
-
           if (sel.dataset[FLAG] === "1") return;
 
           const atual = sel.options[sel.selectedIndex];
@@ -363,7 +365,6 @@ span.select2-container--open{
     function shouldApplyForSelect(sel) {
       const tr = sel.closest("tr");
       if (!tr) return false;
-
       const meioSpan = tr.querySelector('span[id$=":meioCom"]');
       const meio = U.norm(meioSpan?.textContent);
       return meio === "Diário Eletrônico";
@@ -385,7 +386,6 @@ span.select2-container--open{
       }
 
       const lastIndex = opts.length - 1;
-
       if (sel.selectedIndex !== lastIndex) {
         sel.selectedIndex = lastIndex;
         U.fireAll(sel);
@@ -395,8 +395,7 @@ span.select2-container--open{
     }
 
     function applyAll() {
-      const selects = document.querySelectorAll('select[id$=":comboAgrupar"]');
-      selects.forEach(applySelect);
+      document.querySelectorAll('select[id$=":comboAgrupar"]').forEach(applySelect);
     }
 
     function init() {}
@@ -459,7 +458,6 @@ span.select2-container--open{
     function createButtons(onClick) {
       const wrap = document.createElement("div");
       wrap.className = "pje-prazo-wrap";
-
       BTN_VALUES.forEach(v => {
         const b = document.createElement("button");
         b.type = "button";
@@ -471,24 +469,20 @@ span.select2-container--open{
         });
         wrap.appendChild(b);
       });
-
       return wrap;
     }
 
     function addLineButtons(input) {
       const td = input.closest("td");
       if (!td) return;
-
       if (td.querySelector(".pje-prazo-wrap")) return;
-      ensureStyles();
 
-      const wrap = createButtons(v => {
+      ensureStyles();
+      td.appendChild(createButtons(v => {
         input.value = v;
         U.fireAll(input);
         input.focus();
-      });
-
-      td.appendChild(wrap);
+      }));
     }
 
     function addTopButtons(table) {
@@ -530,7 +524,6 @@ span.select2-container--open{
 
       th.textContent = "";
       th.appendChild(box);
-
       table.dataset.pjePrazoTop = "1";
     }
 
@@ -613,6 +606,8 @@ span.select2-container--open{
         if (!region) return resolve();
 
         let done = false;
+        const obs = new MutationObserver(() => finish());
+
         const finish = () => {
           if (done) return;
           done = true;
@@ -620,9 +615,7 @@ span.select2-container--open{
           resolve();
         };
 
-        const obs = new MutationObserver(() => finish());
         obs.observe(region, { childList: true, subtree: true });
-
         setTimeout(finish, timeoutMs);
       });
     }
@@ -722,6 +715,128 @@ span.select2-container--open{
   })();
 
   /* ------------------------------------------------------------------
+   * Módulo F: Copiar ID (ícone padrão do PJe ao lado do link)
+   *  - Sem MutationObserver próprio ✅ (usa o scheduler global)
+   *  - Ícone clonado do PJe quando disponível ✅
+   *  - Toast de ação do usuário com force:true ✅
+   * ------------------------------------------------------------------ */
+  const ModCopiarID = (() => {
+    const NAME = "Copiar ID";
+    const WRAP_ATTR = "data-pje-copyid-wrapped";
+    const ICON_MARK = "data-pje-copyid-icon";
+    const STYLE_ID = "pje-unified-copyid-style";
+
+    function ensureStyles() {
+      if (document.getElementById(STYLE_ID)) return;
+      const style = document.createElement("style");
+      style.id = STYLE_ID;
+      style.textContent = `
+        [${ICON_MARK}="1"]{
+          margin-left:6px;
+          cursor: copy;
+          vertical-align: middle;
+        }
+        [${ICON_MARK}="1"]:hover{
+          filter: brightness(1.15);
+        }
+      `;
+      document.documentElement.appendChild(style);
+    }
+
+    async function copyText(text) {
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+      } catch (_) {}
+
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        ta.style.top = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+        return ok;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function getPjeClipboardTemplate() {
+      // tenta achar um ícone real já renderizado no PJe
+      return document.querySelector('i.copiar-clipboard, i.fa-clipboard, i[class*="clipboard"]');
+    }
+
+    function makeIcon(idValue) {
+      const tpl = getPjeClipboardTemplate();
+
+      let icon;
+      if (tpl) {
+        icon = tpl.cloneNode(true);
+        icon.removeAttribute("onclick");
+      } else {
+        icon = document.createElement("span");
+        icon.textContent = "📋";
+        icon.style.fontSize = "13px";
+      }
+
+      icon.setAttribute(ICON_MARK, "1");
+      icon.setAttribute("title", "Copiar número para área de transferência");
+
+      icon.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+
+        const ok = await copyText(idValue);
+        Toast.push({
+          level: ok ? "info" : "warn",
+          title: "Copiar ID",
+          message: ok ? `ID copiado: ${idValue}` : "Não consegui copiar 😕",
+          force: true, // ação do usuário: mostra mesmo em WARN_ONLY
+          key: `copyid|${ok}|${idValue}`
+        });
+      });
+
+      return icon;
+    }
+
+    function processLinks() {
+      ensureStyles();
+
+      const links = document.querySelectorAll('a[href*="/documento/download/"]');
+      if (!links.length) return;
+
+      links.forEach(a => {
+        const idValue = (a.textContent || "").trim();
+        if (!/^\d+$/.test(idValue)) return;
+
+        if (a.getAttribute(WRAP_ATTR) === "1") return;
+        a.setAttribute(WRAP_ATTR, "1");
+
+        const next = a.nextElementSibling;
+        if (next && next.getAttribute && next.getAttribute(ICON_MARK) === "1") return;
+
+        a.insertAdjacentElement("afterend", makeIcon(idValue));
+      });
+    }
+
+    function init() {}
+    function apply() {
+      try { processLinks(); }
+      catch (e) { Toast.failure(NAME, e, "processLinks"); }
+    }
+
+    return { NAME, init, apply };
+  })();
+
+  /* ------------------------------------------------------------------
    * Registro de módulos
    * ------------------------------------------------------------------ */
   const MODULES = [
@@ -730,6 +845,7 @@ span.select2-container--open{
     ModAgruparCom,
     ModPrazoRapido,
     ModAdvogados,
+    ModCopiarID,
   ];
 
   function runAll(reason) {
@@ -750,10 +866,5 @@ span.select2-container--open{
   document.addEventListener("DOMContentLoaded", () => scheduleApply("dom-ready"), { once: true });
   window.addEventListener("load", () => scheduleApply("window-load"), { once: true });
 
-  Toast.info(
-    "PJe Automação",
-    "Script unificado ativo ✅",
-    "Select nativo + Padrões + Prazo + Advogados + Agrupar com",
-    "unified-active"
-  );
+  // Sem toast "script ativo" pra não poluir (WARN_ONLY já resolve).
 })();
