@@ -94,12 +94,27 @@ A responsabilidade pela conferência, validação e finalização do ato process
 ## 🚀 Instalação
 
 1. Instale a extensão **Tampermonkey** (Chrome ou Edge)
-2. Configure as permissões conforme a imagem abaixo:
-3. <img width="643" height="934" alt="image" src="https://github.com/user-attachments/assets/5130c99c-e807-4222-bec7-57ab64f3dff8" />
+
+2. Configure as permissões da extensão Tampermonkey no navegador:
+
+   a) Clique no ícone de **Extensões** (quebra-cabeça)  
+   b) Localize **Manage Extentions - Manejar Extensões**  
+   c) Busque por **Tampermonkey**  
+   d) Selecione **“Detalhes”**  
+   
+
+3. Confira as permissões conforme a imagem abaixo:
+
+<img width="643" height="934" alt="image" src="https://github.com/user-attachments/assets/5130c99c-e807-4222-bec7-57ab64f3dff8" />
+
 4. Abra uma nova janela do navegador
-5. Acesse o link abaixo:
-6. 👉 https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
-7. Clique em **Install**
+
+5. Acesse o link de instalação direta:
+
+👉 https://raw.githubusercontent.com/Melhorias-PJe/script/main/pje-tjce-automacao.user.js
+
+6. Clique em **Install**
+
 
 ---
 
