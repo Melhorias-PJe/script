@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PJe TJCE - Automação Unificada (Select + Padrões + Prazo + Advogados + Agrupar + Copiar ID)
 // @namespace    local.tjce.pje.unified.automacao
-// @version      1.0.2
-// @description  Unifica: Select nativo (sem Select2), Padrões (Intimação/Diário), Prazo rápido (linha+topo), Botões Advogados Autor/Réu + Auto Mostrar Todos, Agrupar com (última opção só no Diário Eletrônico) e Copiar ID com ícone padrão do PJe. Toast discreto (inferior direito) e 1 scheduler/observer global.
+// @version      1.0.3
+// @description  Unifica: Select nativo (sem Select2), Padrões (Intimação/Diário) com verificação de segurança (idle), Prazo rápido (linha+topo), Botões Advogados Autor/Réu + Auto Mostrar Todos, Agrupar com (última opção só no Diário Eletrônico) e Copiar ID com ícone padrão do PJe. Toast discreto (inferior direito) e 1 scheduler/observer global.
 // @match        https://pje.tjce.jus.br/pje1grau/*
 // @run-at       document-start
 // @grant        none
@@ -21,6 +21,7 @@
     TOAST_MODE: "WARN_ONLY",    // "ALL" | "WARN_ONLY" | "OFF"
     OBS_DEBOUNCE_MS: 0,         // 0 => requestAnimationFrame
     AUTO_MOSTRAR_TODOS: true,   // tenta clicar automaticamente em "Mostrar todos"
+    IDLE_VERIFY_FRAMES: 3,      // quantos frames "estáveis" para verificar padrões (sem setTimeout)
   };
 
   /* ------------------------------------------------------------------
@@ -59,9 +60,6 @@
 
   /* ------------------------------------------------------------------
    * Toast (discreto) + Anti-spam de mensagens
-   *  - Inferior direito ✅
-   *  - WARN_ONLY por padrão ✅
-   *  - Suporta force:true (para ações do usuário, ex: "ID copiado") ✅
    * ------------------------------------------------------------------ */
   const Toast = (() => {
     const SPAM = new Set();
@@ -238,7 +236,51 @@
     }
   }
 
-  const MO = new MutationObserver(() => scheduleApply("mutation"));
+  /* ------------------------------------------------------------------
+   * Verificação de segurança (sem setTimeout): roda quando DOM "estabiliza"
+   * ------------------------------------------------------------------ */
+  let mutationTick = 0;
+  let idleRaf = 0;
+
+  function scheduleIdleVerify() {
+    if (idleRaf) return;
+
+    const targetFrames = Math.max(1, CONFIG.IDLE_VERIFY_FRAMES);
+    let stable = 0;
+    let lastTick = mutationTick;
+
+    const tick = () => {
+      // Se houve nova mutação, reset
+      if (mutationTick !== lastTick) {
+        lastTick = mutationTick;
+        stable = 0;
+      } else {
+        stable++;
+      }
+
+      if (stable >= targetFrames) {
+        idleRaf = 0;
+        try {
+          if (typeof ModPadroes?.verifyAndFix === "function") {
+            ModPadroes.verifyAndFix();
+          }
+        } catch (e) {
+          // verificação não pode quebrar nada
+        }
+        return;
+      }
+
+      idleRaf = requestAnimationFrame(tick);
+    };
+
+    idleRaf = requestAnimationFrame(tick);
+  }
+
+  const MO = new MutationObserver(() => {
+    mutationTick++;
+    scheduleApply("mutation");
+    scheduleIdleVerify();
+  });
   MO.observe(document.documentElement, { childList: true, subtree: true });
 
   /* ------------------------------------------------------------------
@@ -311,7 +353,8 @@ span.select2-container--open{
   })();
 
   /* ------------------------------------------------------------------
-   * Módulo B: Padrões (Intimação / Diário Eletrônico)
+   * Módulo B: Padrões (Intimação / Diário Eletrônico) + Verificação (idle)
+   *  - v1.0.3: evita flag precoce e confirma aplicação
    * ------------------------------------------------------------------ */
   const ModPadroes = (() => {
     const NAME = "Padrões";
@@ -319,11 +362,11 @@ span.select2-container--open{
 
     function setDefaults() {
       const selects = document.querySelectorAll("select");
+
       selects.forEach(sel => {
         try {
           const opts = Array.from(sel.options || []);
           if (!opts.length) return;
-          if (sel.dataset[FLAG] === "1") return;
 
           const atual = sel.options[sel.selectedIndex];
           if (!atual) return;
@@ -331,28 +374,116 @@ span.select2-container--open{
           const atualTxt = (atual.textContent || "").trim().toLowerCase();
 
           const intimacao = opts.find(o => (o.textContent || "").trim().toLowerCase().startsWith("intimação"));
+          const diario    = opts.find(o => (o.textContent || "").trim().toLowerCase().startsWith("diário eletrônico"));
+
+          // Se já está flagado, mas ainda está em placeholder, libera para tentar de novo
+          if (sel.dataset[FLAG] === "1") {
+            if ((intimacao && atualTxt === "selecione") || (diario && atualTxt === "sistema")) {
+              delete sel.dataset[FLAG];
+            } else {
+              return;
+            }
+          }
+
+          let attempted = false;
+          let appliedOk = false;
+
+          // Comunicação -> Intimação
           if (intimacao && atualTxt === "selecione") {
+            attempted = true;
             sel.value = intimacao.value;
             U.fireAll(sel);
+            const afterTxt = (sel.options[sel.selectedIndex]?.textContent || "").trim().toLowerCase();
+            if (afterTxt.startsWith("intimação")) appliedOk = true;
           }
 
-          const diario = opts.find(o => (o.textContent || "").trim().toLowerCase().startsWith("diário eletrônico"));
+          // Meio -> Diário Eletrônico
           if (diario && atualTxt === "sistema") {
+            attempted = true;
             sel.value = diario.value;
             U.fireAll(sel);
+            const afterTxt = (sel.options[sel.selectedIndex]?.textContent || "").trim().toLowerCase();
+            if (afterTxt.startsWith("diário eletrônico")) appliedOk = true;
           }
 
-          sel.dataset[FLAG] = "1";
+          // Marca aplicado somente se:
+          // - não precisou mexer, ou
+          // - tentou e conseguiu aplicar (evita "flag precoce")
+          const finalTxt = (sel.options[sel.selectedIndex]?.textContent || "").trim().toLowerCase();
+          const stillNeeds =
+            (intimacao && finalTxt === "selecione") ||
+            (diario && finalTxt === "sistema");
+
+          if (!stillNeeds || (attempted && appliedOk)) {
+            sel.dataset[FLAG] = "1";
+          } else {
+            delete sel.dataset[FLAG];
+          }
         } catch (e) {
           Toast.failure(NAME, e, "setDefaults");
         }
       });
     }
 
+    function verifyAndFix() {
+      // Foca na tabela de destinatários para ser mais seguro (não varre a página toda)
+      const table = document.querySelector('table[id$=":destinatariosTable"]');
+      if (!table) return;
+
+      const selects = table.querySelectorAll("select");
+      let pendentes = 0;
+
+      selects.forEach(sel => {
+        try {
+          const opts = Array.from(sel.options || []);
+          if (!opts.length) return;
+
+          const atual = sel.options[sel.selectedIndex];
+          if (!atual) return;
+
+          const atualTxt = (atual.textContent || "").trim().toLowerCase();
+
+          const intimacao = opts.find(o => (o.textContent || "").trim().toLowerCase().startsWith("intimação"));
+          const diario    = opts.find(o => (o.textContent || "").trim().toLowerCase().startsWith("diário eletrônico"));
+
+          let fixed = false;
+
+          if (intimacao && atualTxt === "selecione") {
+            sel.value = intimacao.value;
+            U.fireAll(sel);
+            fixed = true;
+          }
+
+          if (diario && atualTxt === "sistema") {
+            sel.value = diario.value;
+            U.fireAll(sel);
+            fixed = true;
+          }
+
+          // Se tentou corrigir, garante que o setDefaults possa revalidar
+          if (fixed) delete sel.dataset[FLAG];
+
+          const afterTxt = (sel.options[sel.selectedIndex]?.textContent || "").trim().toLowerCase();
+          if ((intimacao && afterTxt === "selecione") || (diario && afterTxt === "sistema")) {
+            pendentes++;
+          }
+        } catch (_) {}
+      });
+
+      if (pendentes > 0) {
+        Toast.push({
+          level: "warn",
+          title: "Padrões",
+          message: `Alguns campos ainda não pegaram o padrão (${pendentes}). Vou revalidar quando estabilizar.`,
+          key: `padroes-pendentes-${pendentes}`,
+        });
+      }
+    }
+
     function init() {}
     function apply() { setDefaults(); }
 
-    return { NAME, init, apply };
+    return { NAME, init, apply, verifyAndFix };
   })();
 
   /* ------------------------------------------------------------------
@@ -716,9 +847,6 @@ span.select2-container--open{
 
   /* ------------------------------------------------------------------
    * Módulo F: Copiar ID (ícone padrão do PJe ao lado do link)
-   *  - Sem MutationObserver próprio ✅ (usa o scheduler global)
-   *  - Ícone clonado do PJe quando disponível ✅
-   *  - Toast de ação do usuário com force:true ✅
    * ------------------------------------------------------------------ */
   const ModCopiarID = (() => {
     const NAME = "Copiar ID";
@@ -769,7 +897,6 @@ span.select2-container--open{
     }
 
     function getPjeClipboardTemplate() {
-      // tenta achar um ícone real já renderizado no PJe
       return document.querySelector('i.copiar-clipboard, i.fa-clipboard, i[class*="clipboard"]');
     }
 
@@ -799,7 +926,7 @@ span.select2-container--open{
           level: ok ? "info" : "warn",
           title: "Copiar ID",
           message: ok ? `ID copiado: ${idValue}` : "Não consegui copiar 😕",
-          force: true, // ação do usuário: mostra mesmo em WARN_ONLY
+          force: true,
           key: `copyid|${ok}|${idValue}`
         });
       });
