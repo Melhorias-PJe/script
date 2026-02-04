@@ -1,9 +1,9 @@
 
 /* ===== banner.js ===== */
 // ==UserScript==
-// @name         PJe TJCE - Automação Unificada (Select + Padrões + Prazo + Advogados + Agrupar + Copiar ID + Estabilizador)
+// @name         PJe TJCE - Automação Unificada 
 // @namespace    local.tjce.pje.unified.automacao
-// @version      1.1.5
+// @version      1.1.6
 // @description  (Build modular) Detecta tipo do select por opções (Meio x Comunicação), estabiliza 'Selecione' com fallback correto, reduz spam de toast e adiciona Copiar ID com ícone ao lado do link.
 // @match        https://pje.tjce.jus.br/pje1grau/*
 // @run-at       document-start
@@ -25,7 +25,7 @@ const CONFIG = {
   TOAST_SHOW_ERROR: true,
 
   START_AFTER_LOAD: true,
-  START_QUIET_MS: 3000,
+  START_QUIET_MS: 800,
   START_MAX_WAIT_MS: 9000,
 
   AUTO_MOSTRAR_TODOS: true,
@@ -49,6 +49,21 @@ const CONFIG = {
   STABILIZER_STABLE_SIG_LIMIT: 4,
 
   COPY_ID_TOAST_ON_SUCCESS: false,
+
+  // Páginas onde os módulos (exceto Copiar ID) podem rodar
+  // Preferir seletor de DOM (mais estável que URL/Hash no SPA)
+  TARGET_SELECTOR: "#taskInstanceForm",
+  TARGET_TASK_LINK_ID_PREFIX: "taskInstanceForm:Processo_Fluxo_prepararExpediente-",
+  TARGET_TASK_LINK_TEXTS: [
+    "Escolher destinatários",
+    "Preparar ato",
+    "Escolher documentos e finalizar",
+  ],
+  TARGET_HASH_PREFIXES: [
+    "#/painel-usuario-interno/conteudo-tarefa/",
+    "#/painel-usuario-interno",
+    "#/painel-usuario-interno/lista-minhas-tarefas/",
+  ],
 };
 
 
@@ -101,6 +116,32 @@ const U = {
     let h = 0;
     for (let i = 0; i < str.length; i++) h = ((h << 5) - h) + str.charCodeAt(i) | 0;
     return String(h >>> 0);
+  },
+  isTargetPage() {
+    const sel = (CONFIG.TARGET_SELECTOR || "").trim();
+    if (sel && document.querySelector(sel)) {
+      const idPrefix = (CONFIG.TARGET_TASK_LINK_ID_PREFIX || "").trim();
+      const texts = Array.isArray(CONFIG.TARGET_TASK_LINK_TEXTS)
+        ? CONFIG.TARGET_TASK_LINK_TEXTS.map(t => U.norm(t))
+        : [];
+
+      if (idPrefix && texts.length) {
+        const links = Array.from(document.querySelectorAll(`a[id^="${idPrefix}"]`));
+        const linkTexts = links.map(a => U.norm(a.textContent));
+        const allFound = texts.every(t => linkTexts.includes(t));
+        if (allFound) return true;
+      } else {
+        return true;
+      }
+    }
+
+    const hash = window.location && typeof window.location.hash === "string"
+      ? window.location.hash
+      : "";
+    const prefixes = Array.isArray(CONFIG.TARGET_HASH_PREFIXES)
+      ? CONFIG.TARGET_HASH_PREFIXES
+      : [];
+    return prefixes.some(p => hash.startsWith(p));
   },
 };
 
@@ -986,6 +1027,7 @@ const SchedulerAPI = (() => {
   function scheduleFinalCheck(reason, { silent = false } = {}) {
     if (!CONFIG.FINAL_CHECK_ENABLED) return;
     if (!state.automationsEnabled) return;
+    if (!U.isTargetPage()) return;
 
     if (finalCheckTimer) clearTimeout(finalCheckTimer);
 
@@ -1087,6 +1129,9 @@ const Scheduler = (() => {
   });
   MO.observe(document.documentElement, { childList: true, subtree: true });
 
+  // SPA troca hash sem reload; garante reavaliação das regras por página
+  window.addEventListener("hashchange", () => scheduleApply());
+
   return { scheduleApply };
 })();
 
@@ -1100,13 +1145,17 @@ const HEAVY_MODULES = [
 ];
 
 function runAll() {
-  ModSelectNativo.init();
-  ModSelectNativo.apply();
-
   // Copiar ID pode rodar mesmo no boot leve
   try { ModCopiarID.apply(); } catch (e) {}
 
+  if (!U.isTargetPage()) return;
+
+  ModSelectNativo.init();
+  ModSelectNativo.apply();
+
   if (!state.automationsEnabled) return;
+
+  FinalCheckClicks.install();
 
   for (const m of HEAVY_MODULES) { m.init && m.init(); }
   for (const m of HEAVY_MODULES) { m.apply && m.apply(); }
@@ -1120,7 +1169,6 @@ function runAll() {
 async function enableAfterLoadAndQuiet() {
   if (!CONFIG.START_AFTER_LOAD) {
     state.automationsEnabled = true;
-    FinalCheckClicks.install();
     Scheduler.scheduleApply();
     return;
   }
@@ -1143,8 +1191,6 @@ async function enableAfterLoadAndQuiet() {
   await waitQuiet(CONFIG.START_QUIET_MS, CONFIG.START_MAX_WAIT_MS);
 
   state.automationsEnabled = true;
-  FinalCheckClicks.install();
-
   Scheduler.scheduleApply();
 
   if (CONFIG.FINAL_CHECK_FALLBACK_ON_LOAD_SILENT) {
