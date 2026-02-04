@@ -25,7 +25,11 @@ const CONFIG = {
   TOAST_SHOW_ERROR: true,
 
   START_AFTER_LOAD: true,
+<<<<<<< HEAD
   START_QUIET_MS: 800,
+=======
+  START_QUIET_MS: 1000,
+>>>>>>> cc8ebb2b60ca9bfe8f3b5100a12d740055cc4f05
   START_MAX_WAIT_MS: 9000,
 
   AUTO_MOSTRAR_TODOS: true,
