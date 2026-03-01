@@ -1,13 +1,15 @@
 
 /* ===== banner.js ===== */
 // ==UserScript==
-// @name         PJe TJCE - Automação Unificada 
+// @name         PJe TJCE - Automação Unificada (Select + Padrões + Prazo + Advogados + Agrupar + Copiar ID + Estabilizador)
 // @namespace    local.tjce.pje.unified.automacao
-// @version      1.1.6
+// @version      1.1.7
 // @description  (Build modular) Detecta tipo do select por opções (Meio x Comunicação), estabiliza 'Selecione' com fallback correto, reduz spam de toast e adiciona Copiar ID com ícone ao lado do link.
 // @match        https://pje.tjce.jus.br/pje1grau/*
+// @match        https://pje-treinamento-release.tjce.jus.br/pje1grau/*
 // @run-at       document-start
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      comunicaapi.pje.jus.br
 // ==/UserScript==
 
 (function () {
@@ -897,6 +899,290 @@ const ModAdvogados = (() => {
 
 
 
+/* ===== modules/comunicaDj.js ===== */
+const ModComunicaDJ = (() => {
+  const NAME = "Comunica DJ";
+  const CFG = {
+    TRIBUNAL: "TJCE",
+    ITEM_SELECTOR: 'div[id$=":infoPPE"]',
+    DIARIO_RE: /\b(DIARIO|DJ)\s+ELETRONICO\b/i,
+    ADV_LINE_ATTR: "data-adv-publicacao",
+    BTN_APPLIED_FLAG: "tmDjBtnsApplied",
+  };
+
+  function dataBRparaISO(dataBR) {
+    const m = String(dataBR || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+  }
+
+  function addDaysISO(iso, days) {
+    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    dt.setDate(dt.getDate() + Number(days || 0));
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+  }
+
+  function isWeekendISO(iso) {
+    const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return false;
+    const d = new Date(+m[1], +m[2] - 1, +m[3]).getDay();
+    return d === 0 || d === 6;
+  }
+
+  function calcDataFimISO(dataIniISO) {
+    let fim = addDaysISO(dataIniISO, 1);
+    for (let i = 0; i < 10; i++) {
+      if (!fim) return null;
+      if (!isWeekendISO(fim)) return fim;
+      fim = addDaysISO(fim, 1);
+    }
+    return fim;
+  }
+
+  function normalizarNumeroProcesso(str) {
+    return String(str || "").replace(/\D/g, "");
+  }
+
+  function extrairNumeroProcessoDoItem(infoPPE) {
+    const txt = infoPPE?.innerText || "";
+    const m = txt.match(/\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/);
+    return m ? normalizarNumeroProcesso(m[0]) : null;
+  }
+
+  function extrairNumeroProcessoDoDOM() {
+    const txt = (document.body?.innerText || "").slice(0, 120000);
+    const m = txt.match(/\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/);
+    return m ? normalizarNumeroProcesso(m[0]) : null;
+  }
+
+  function montarUrlComunicaWeb({ dataIniISO, dataFimISO, numeroProcesso }) {
+    return (
+      "https://comunica.pje.jus.br/consulta" +
+      `?siglaTribunal=${encodeURIComponent(CFG.TRIBUNAL)}` +
+      `&dataDisponibilizacaoInicio=${encodeURIComponent(dataIniISO)}` +
+      `&dataDisponibilizacaoFim=${encodeURIComponent(dataFimISO)}` +
+      `&numeroProcesso=${encodeURIComponent(numeroProcesso)}`
+    );
+  }
+
+  function montarUrlComunicaApi({ dataIniISO, dataFimISO, numeroProcesso }) {
+    return (
+      "https://comunicaapi.pje.jus.br/api/v1/comunicacao" +
+      `?pagina=1&itensPorPagina=20` +
+      `&siglaTribunal=${encodeURIComponent(CFG.TRIBUNAL)}` +
+      `&dataDisponibilizacaoInicio=${encodeURIComponent(dataIniISO)}` +
+      `&dataDisponibilizacaoFim=${encodeURIComponent(dataFimISO)}` +
+      `&numeroProcesso=${encodeURIComponent(numeroProcesso)}`
+    );
+  }
+
+  function gmGetJSON(url) {
+    const gmReq =
+      (typeof GM_xmlhttpRequest === "function" && GM_xmlhttpRequest) ||
+      (typeof GM !== "undefined" && GM && typeof GM.xmlHttpRequest === "function" && GM.xmlHttpRequest);
+
+    if (!gmReq) return Promise.reject(new Error("GM request API indisponivel"));
+
+    return new Promise((resolve, reject) => {
+      gmReq({
+        method: "GET",
+        url,
+        headers: { Accept: "application/json" },
+        timeout: 20000,
+        onload: r => {
+          try { resolve(JSON.parse(r.responseText)); }
+          catch (e) { reject(e); }
+        },
+        onerror: reject,
+        ontimeout: () => reject(new Error("timeout")),
+      });
+    });
+  }
+
+  function requestJSON(url) {
+    if (
+      typeof GM_xmlhttpRequest === "function" ||
+      (typeof GM !== "undefined" && GM && typeof GM.xmlHttpRequest === "function")
+    ) return gmGetJSON(url);
+    return Promise.reject(new Error("GM request API indisponivel"));
+  }
+
+  function dedup(arr) {
+    const seen = new Set();
+    const out = [];
+    for (const x of arr) {
+      if (!x) continue;
+      if (seen.has(x)) continue;
+      seen.add(x);
+      out.push(x);
+    }
+    return out;
+  }
+
+  function extrairTodosAdvogados(json) {
+    const items = Array.isArray(json?.items) ? json.items : [];
+    if (!items.length) return [];
+
+    const labels = [];
+
+    for (const it of items) {
+      const lista = Array.isArray(it?.destinatarioadvogados) ? it.destinatarioadvogados : [];
+      for (const da of lista) {
+        const a = da?.advogado;
+        if (!a?.nome) continue;
+        const oab = (a.numero_oab && a.uf_oab) ? `OAB/${a.uf_oab}-${a.numero_oab}` : null;
+        labels.push(oab ? `${a.nome} - ${oab}` : a.nome);
+      }
+    }
+
+    return dedup(labels);
+  }
+
+  function criarBotao(iconHtml, title, onClick) {
+    const span = document.createElement("span");
+    span.style.cursor = "pointer";
+    span.style.margin = "3px";
+    span.style.marginLeft = "6px";
+    span.style.userSelect = "none";
+    span.title = title;
+    span.innerHTML = iconHtml;
+
+    span.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    span.addEventListener("mouseenter", () => { span.style.opacity = "0.7"; });
+    span.addEventListener("mouseleave", () => { span.style.opacity = "1"; });
+
+    return span;
+  }
+
+  function getOrCreateAdvBlock(divDiario) {
+    let bloco = divDiario.nextElementSibling;
+
+    if (!bloco || bloco.getAttribute(CFG.ADV_LINE_ATTR) !== "1") {
+      bloco = document.createElement("div");
+      bloco.setAttribute(CFG.ADV_LINE_ATTR, "1");
+      bloco.style.marginTop = "4px";
+      bloco.style.fontSize = "12px";
+      bloco.style.opacity = "0.92";
+      divDiario.parentNode.insertBefore(bloco, divDiario.nextSibling);
+    }
+
+    return bloco;
+  }
+
+  function renderAdvogadosEmLinhas(bloco, advs, statusText) {
+    bloco.innerHTML = "";
+
+    const titulo = document.createElement("div");
+    titulo.style.fontWeight = "bold";
+    titulo.textContent = statusText || "Advogados da comunicacao:";
+    bloco.appendChild(titulo);
+
+    if (!advs.length) return;
+
+    const lista = document.createElement("div");
+    lista.style.marginTop = "2px";
+
+    for (const a of advs) {
+      const linha = document.createElement("div");
+      linha.textContent = `- ${a}`;
+      lista.appendChild(linha);
+    }
+
+    bloco.appendChild(lista);
+  }
+
+  function aplicarBotoesInline(divDiario, handlers) {
+    if (divDiario.dataset[CFG.BTN_APPLIED_FLAG] === "1") return;
+    divDiario.dataset[CFG.BTN_APPLIED_FLAG] = "1";
+
+    const texto = (divDiario.textContent || "").trim();
+    divDiario.textContent = "";
+
+    const spanTexto = document.createElement("span");
+    spanTexto.textContent = texto;
+
+    const btnAbrir = criarBotao(
+      '<i class="fa fa-external-link" aria-hidden="true"></i>',
+      "Abrir Comunica (web)",
+      handlers.onOpenWeb
+    );
+    const btnAdv = criarBotao(
+      '<i class="fa fa-user" aria-hidden="true"></i>',
+      "Buscar advogados da comunicacao (API)",
+      handlers.onFetchAdv
+    );
+
+    divDiario.appendChild(spanTexto);
+    divDiario.appendChild(btnAbrir);
+    divDiario.appendChild(btnAdv);
+  }
+
+  function acharDivDiario(infoPPE) {
+    return U.qsa("div", infoPPE).find((d) => {
+      const t = U.normUpper(d.textContent || "");
+      return CFG.DIARIO_RE.test(t);
+    });
+  }
+
+  async function buscarEInjetarAdvogados({ divDiario, urlApi }) {
+    const bloco = getOrCreateAdvBlock(divDiario);
+
+    try {
+      renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: carregando...");
+      const json = await requestJSON(urlApi);
+      const advs = extrairTodosAdvogados(json);
+
+      if (!advs.length) {
+        renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: nao encontrados.");
+        U.debug("[ComunicaDJ] API JSON sem advogados", json);
+        return;
+      }
+
+      renderAdvogadosEmLinhas(bloco, advs, "Advogados da comunicacao:");
+    } catch (e) {
+      renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: erro ao consultar a API.");
+      U.err("[ComunicaDJ] Erro API:", e);
+    }
+  }
+
+  function processarItem(infoPPE) {
+    const divDiario = acharDivDiario(infoPPE);
+    if (!divDiario) return;
+
+    const m = (divDiario.textContent || "").match(/(\d{2}\/\d{2}\/\d{4})/);
+    if (!m) return;
+
+    const dataIniISO = dataBRparaISO(m[1]);
+    const dataFimISO = dataIniISO ? calcDataFimISO(dataIniISO) : null;
+
+    const numeroProcesso = extrairNumeroProcessoDoItem(infoPPE) || extrairNumeroProcessoDoDOM();
+
+    if (!dataIniISO || !dataFimISO || !numeroProcesso) return;
+
+    const urlWeb = montarUrlComunicaWeb({ dataIniISO, dataFimISO, numeroProcesso });
+    const urlApi = montarUrlComunicaApi({ dataIniISO, dataFimISO, numeroProcesso });
+
+    aplicarBotoesInline(divDiario, {
+      onOpenWeb: () => window.open(urlWeb, "_blank", "noopener"),
+      onFetchAdv: () => { buscarEInjetarAdvogados({ divDiario, urlApi }); },
+    });
+  }
+
+  function apply() {
+    try { U.qsa(CFG.ITEM_SELECTOR).forEach(processarItem); }
+    catch (e) { Toast.failure(NAME, e, "apply"); }
+  }
+
+  return { NAME, init() {}, apply };
+})();
+
+
+
 /* ===== modules/copiarId.js ===== */
 const ModCopiarID = (() => {
   const NAME = "Copiar ID";
@@ -1147,6 +1433,8 @@ const HEAVY_MODULES = [
 function runAll() {
   // Copiar ID pode rodar mesmo no boot leve
   try { ModCopiarID.apply(); } catch (e) {}
+  // Comunica DJ pode aparecer fora do contexto da tarefa-alvo
+  try { ModComunicaDJ.apply(); } catch (e) {}
 
   if (!U.isTargetPage()) return;
 
