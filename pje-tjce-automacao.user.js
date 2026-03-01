@@ -1,7 +1,7 @@
 
 /* ===== banner.js ===== */
 // ==UserScript==
-// @name         PJe TJCE - Automação Unificada (Select + Padrões + Prazo + Advogados + Agrupar + Copiar ID + Estabilizador)
+// @name         PJe TJCE - Automação Unificada
 // @namespace    local.tjce.pje.unified.automacao
 // @version      1.1.7
 // @description  (Build modular) Detecta tipo do select por opções (Meio x Comunicação), estabiliza 'Selecione' com fallback correto, reduz spam de toast e adiciona Copiar ID com ícone ao lado do link.
