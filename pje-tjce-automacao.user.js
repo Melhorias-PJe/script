@@ -3,7 +3,7 @@
 // ==UserScript==
 // @name         PJe TJCE - Automação Unificada
 // @namespace    local.tjce.pje.unified.automacao
-// @version      1.1.7
+// @version      1.1.8
 // @description  (Build modular) Detecta tipo do select por opções (Meio x Comunicação), estabiliza 'Selecione' com fallback correto, reduz spam de toast e adiciona Copiar ID com ícone ao lado do link.
 // @match        https://pje.tjce.jus.br/pje1grau/*
 // @match        https://pje-treinamento-release.tjce.jus.br/pje1grau/*
@@ -906,8 +906,11 @@ const ModComunicaDJ = (() => {
     TRIBUNAL: "TJCE",
     ITEM_SELECTOR: 'div[id$=":infoPPE"]',
     DIARIO_RE: /\b(DIARIO|DJ)\s+ELETRONICO\b/i,
-    ADV_LINE_ATTR: "data-adv-publicacao",
     BTN_APPLIED_FLAG: "tmDjBtnsApplied",
+    CERT_APPLIED_FLAG: "tmDjCertBtnApplied",
+    ADV_BLOCK_ATTR: "data-adv-publicacao",
+    CERT_STATE_KEY: "__tmDjState",
+    MODAL_ID: "tmDjCertidaoModal",
   };
 
   function dataBRparaISO(dataBR) {
@@ -938,6 +941,21 @@ const ModComunicaDJ = (() => {
       fim = addDaysISO(fim, 1);
     }
     return fim;
+  }
+
+  function formatarDataExtensoBR(dateObj) {
+    const meses = [
+      "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+      "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+    ];
+    const d = dateObj.getDate();
+    const m = meses[dateObj.getMonth()];
+    const a = dateObj.getFullYear();
+    return `${d} de ${m} de ${a}`;
+  }
+
+  function hojeFortalezaExtenso() {
+    return `Fortaleza, ${formatarDataExtensoBR(new Date())}.`;
   }
 
   function normalizarNumeroProcesso(str) {
@@ -988,13 +1006,16 @@ const ModComunicaDJ = (() => {
       gmReq({
         method: "GET",
         url,
-        headers: { Accept: "application/json" },
         timeout: 20000,
-        onload: r => {
-          try { resolve(JSON.parse(r.responseText)); }
-          catch (e) { reject(e); }
+        headers: { Accept: "application/json" },
+        onload: (res) => {
+          try {
+            resolve(JSON.parse(res.responseText));
+          } catch (e) {
+            reject(e);
+          }
         },
-        onerror: reject,
+        onerror: (err) => reject(err),
         ontimeout: () => reject(new Error("timeout")),
       });
     });
@@ -1020,23 +1041,29 @@ const ModComunicaDJ = (() => {
     return out;
   }
 
-  function extrairTodosAdvogados(json) {
-    const items = Array.isArray(json?.items) ? json.items : [];
-    if (!items.length) return [];
+  function extrairPartes(item) {
+    const ds = Array.isArray(item?.destinatarios) ? item.destinatarios : [];
+    return dedup(ds.map(d => d?.nome).filter(Boolean));
+  }
 
+  function extrairAdvogadosDoItem(item) {
+    const lista = Array.isArray(item?.destinatarioadvogados) ? item.destinatarioadvogados : [];
     const labels = [];
 
-    for (const it of items) {
-      const lista = Array.isArray(it?.destinatarioadvogados) ? it.destinatarioadvogados : [];
-      for (const da of lista) {
-        const a = da?.advogado;
-        if (!a?.nome) continue;
-        const oab = (a.numero_oab && a.uf_oab) ? `OAB/${a.uf_oab}-${a.numero_oab}` : null;
-        labels.push(oab ? `${a.nome} - ${oab}` : a.nome);
-      }
+    for (const da of lista) {
+      const a = da?.advogado;
+      if (!a?.nome) continue;
+      const oab = (a.numero_oab && a.uf_oab) ? `OAB/${a.uf_oab} ${a.numero_oab}` : null;
+      labels.push(oab ? `${a.nome} - ${oab}` : a.nome);
     }
 
     return dedup(labels);
+  }
+
+  function escolherItemDaResposta(json, numeroProcesso) {
+    const items = Array.isArray(json?.items) ? json.items : [];
+    if (!items.length) return null;
+    return items.find(it => String(it?.numero_processo) === String(numeroProcesso)) || items[0] || null;
   }
 
   function criarBotao(iconHtml, title, onClick) {
@@ -1055,16 +1082,22 @@ const ModComunicaDJ = (() => {
     });
     span.addEventListener("mouseenter", () => { span.style.opacity = "0.7"; });
     span.addEventListener("mouseleave", () => { span.style.opacity = "1"; });
-
     return span;
+  }
+
+  function acharDivDiario(infoPPE) {
+    return U.qsa("div", infoPPE).find((d) => {
+      const t = U.normUpper(d.textContent || "");
+      return CFG.DIARIO_RE.test(t);
+    });
   }
 
   function getOrCreateAdvBlock(divDiario) {
     let bloco = divDiario.nextElementSibling;
 
-    if (!bloco || bloco.getAttribute(CFG.ADV_LINE_ATTR) !== "1") {
+    if (!bloco || bloco.getAttribute(CFG.ADV_BLOCK_ATTR) !== "1") {
       bloco = document.createElement("div");
-      bloco.setAttribute(CFG.ADV_LINE_ATTR, "1");
+      bloco.setAttribute(CFG.ADV_BLOCK_ATTR, "1");
       bloco.style.marginTop = "4px";
       bloco.style.fontSize = "12px";
       bloco.style.opacity = "0.92";
@@ -1111,42 +1144,315 @@ const ModComunicaDJ = (() => {
       "Abrir Comunica (web)",
       handlers.onOpenWeb
     );
+
     const btnAdv = criarBotao(
       '<i class="fa fa-user" aria-hidden="true"></i>',
-      "Buscar advogados da comunicacao (API)",
+      "Consultar advogados (API)",
       handlers.onFetchAdv
     );
 
     divDiario.appendChild(spanTexto);
     divDiario.appendChild(btnAbrir);
     divDiario.appendChild(btnAdv);
+
+    divDiario.__tmBtnAdvRef = btnAdv;
   }
 
-  function acharDivDiario(infoPPE) {
-    return U.qsa("div", infoPPE).find((d) => {
-      const t = U.normUpper(d.textContent || "");
-      return CFG.DIARIO_RE.test(t);
+  function inserirBotaoCertidaoDepoisDoAdv(divDiario, onClickCertidao) {
+    if (divDiario.dataset[CFG.CERT_APPLIED_FLAG] === "1") return;
+    const btnAdvRef = divDiario.__tmBtnAdvRef;
+    if (!btnAdvRef || !btnAdvRef.parentNode) return;
+
+    const btnCert = criarBotao(
+      '<i class="fa fa-file-text-o" aria-hidden="true"></i>',
+      "Gerar certidao",
+      onClickCertidao
+    );
+
+    btnAdvRef.parentNode.insertBefore(btnCert, btnAdvRef.nextSibling);
+    divDiario.dataset[CFG.CERT_APPLIED_FLAG] = "1";
+    divDiario.__tmBtnCertRef = btnCert;
+  }
+
+  function montarCertidaoTexto(state) {
+    const procMasc = state?.numeroProcessoMasc || state?.numeroProcesso || "";
+    const dataDisp = state?.dataDisponibilizacaoExtenso || state?.dataDisponibilizacaoISO || "";
+    const partes = Array.isArray(state?.partes) ? state.partes : [];
+    const advs = Array.isArray(state?.advogados) ? state.advogados : [];
+
+    const linhas = [];
+    linhas.push("");
+    linhas.push(`Certifico que, na data de ${dataDisp}, foi publicada no Diario de Justica Eletronico comunicacao referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
+    linhas.push("");
+
+    if (state?.publicacaoEncontrada === false) {
+      linhas.length = 0;
+      linhas.push("");
+      linhas.push(`Certifico que realizei consulta ao Diario de Justica Eletronico referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
+      linhas.push("");
+      linhas.push("Apos a consulta, nao foi localizada publicacao correspondente no Diario de Justica Eletronico.");
+      linhas.push("");
+      linhas.push("O referido e verdade. Dou fe.");
+      linhas.push("");
+      return linhas.join("\n");
+    }
+
+    if (advs.length) {
+      if (partes.length) {
+        linhas.push("Parte(s) ou Advogado(s) destinataria(s):");
+        for (const p of partes) linhas.push(`- ${p}`);
+        linhas.push("");
+      }
+      linhas.push("Advogado(s) intimado(s):");
+      for (const a of advs) linhas.push(`- ${a}`);
+      linhas.push("");
+      linhas.push("O referido e verdade. Dou fe.");
+      linhas.push("");
+      return linhas.join("\n");
+    }
+
+    linhas.push("Entretanto, nenhum advogado foi intimado na referida publicacao.");
+    linhas.push("");
+
+    if (partes.length) {
+      linhas.push("Parte(s) ou Advogado(s) destinataria(s):");
+      for (const p of partes) linhas.push(`- ${p}`);
+      linhas.push("");
+    }
+
+    linhas.push("O referido e verdade. Dou fe.");
+    linhas.push("");
+    return linhas.join("\n");
+  }
+
+  function fecharModal() {
+    const old = document.getElementById(CFG.MODAL_ID);
+    if (old) old.remove();
+  }
+
+  function abrirModalCertidao(textoPuro) {
+    fecharModal();
+
+    const overlay = document.createElement("div");
+    overlay.id = CFG.MODAL_ID;
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.background = "rgba(0,0,0,0.45)";
+    overlay.style.zIndex = "999999";
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) fecharModal();
     });
+
+    const box = document.createElement("div");
+    box.style.position = "absolute";
+    box.style.top = "50%";
+    box.style.left = "50%";
+    box.style.transform = "translate(-50%, -50%)";
+    box.style.width = "min(820px, 92vw)";
+    box.style.maxHeight = "82vh";
+    box.style.background = "#fff";
+    box.style.borderRadius = "10px";
+    box.style.boxShadow = "0 10px 30px rgba(0,0,0,0.25)";
+    box.style.padding = "14px";
+
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.marginBottom = "10px";
+
+    const title = document.createElement("div");
+    title.textContent = "Certidao";
+    title.style.fontWeight = "bold";
+    title.style.fontSize = "14px";
+
+    const btnX = document.createElement("button");
+    btnX.type = "button";
+    btnX.textContent = "x";
+    btnX.style.border = "0";
+    btnX.style.background = "transparent";
+    btnX.style.cursor = "pointer";
+    btnX.style.fontSize = "16px";
+    btnX.addEventListener("click", fecharModal);
+
+    header.appendChild(title);
+    header.appendChild(btnX);
+
+    const textarea = document.createElement("textarea");
+    textarea.value = textoPuro;
+    textarea.readOnly = true;
+    textarea.style.width = "100%";
+    textarea.style.height = "52vh";
+    textarea.style.resize = "vertical";
+    textarea.style.fontFamily = "monospace";
+    textarea.style.fontSize = "12px";
+    textarea.style.lineHeight = "1.35";
+    textarea.style.padding = "10px";
+    textarea.style.borderRadius = "8px";
+    textarea.style.border = "1px solid #d0d0d0";
+    textarea.style.boxSizing = "border-box";
+
+    const footer = document.createElement("div");
+    footer.style.display = "flex";
+    footer.style.justifyContent = "flex-end";
+    footer.style.gap = "8px";
+    footer.style.marginTop = "10px";
+
+    const btnCopiar = document.createElement("button");
+    btnCopiar.type = "button";
+    btnCopiar.textContent = "Copiar certidao";
+    btnCopiar.style.cursor = "pointer";
+
+    const btnFechar = document.createElement("button");
+    btnFechar.type = "button";
+    btnFechar.textContent = "Fechar";
+    btnFechar.style.cursor = "pointer";
+    btnFechar.addEventListener("click", fecharModal);
+
+    const toast = document.createElement("div");
+    toast.style.position = "absolute";
+    toast.style.right = "14px";
+    toast.style.bottom = "14px";
+    toast.style.padding = "8px 10px";
+    toast.style.borderRadius = "8px";
+    toast.style.background = "rgba(0,0,0,0.78)";
+    toast.style.color = "#fff";
+    toast.style.fontSize = "12px";
+    toast.style.display = "none";
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.style.display = "block";
+      setTimeout(() => { toast.style.display = "none"; }, 1400);
+    }
+
+    function textoPrincipalParaCopia(texto) {
+      const linhas = String(texto || "").split(/\r?\n/);
+      const filtradas = linhas.filter((ln) => {
+        const t = U.normUpper(ln);
+        if (!t) return false;
+        if (t === "CERTIDAO") return false;
+        if (/^FORTALEZA,\s+.+\.$/i.test(ln.trim())) return false;
+        return true;
+      });
+      return filtradas.join("\n").trim();
+    }
+
+    btnCopiar.addEventListener("click", async () => {
+      const textoCopiar = textoPrincipalParaCopia(textoPuro);
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(textoCopiar);
+        } else {
+          const prev = textarea.value;
+          textarea.value = textoCopiar;
+          textarea.focus();
+          textarea.select();
+          document.execCommand("copy");
+          textarea.value = prev;
+        }
+        showToast("Texto principal copiado.");
+      } catch (e) {
+        U.err("[ComunicaDJ] Falha ao copiar certidao:", e);
+        showToast("Falha ao copiar.");
+      }
+    });
+
+    footer.appendChild(btnCopiar);
+    footer.appendChild(btnFechar);
+
+    box.appendChild(header);
+    box.appendChild(textarea);
+    box.appendChild(footer);
+    box.appendChild(toast);
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
   }
 
-  async function buscarEInjetarAdvogados({ divDiario, urlApi }) {
+  function lerDataDoDivDiario(divDiario) {
+    const m = (divDiario.textContent || "").match(/(\d{2}\/\d{2}\/\d{4})/);
+    return m ? m[1] : null;
+  }
+
+  function dataISOParaExtenso(dataISO) {
+    const m = String(dataISO || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return dataISO || "";
+    const dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    return formatarDataExtensoBR(dt);
+  }
+
+  async function consultarApiEAtualizarEstado({ divDiario, urlApi, numeroProcesso }) {
     const bloco = getOrCreateAdvBlock(divDiario);
+    const state = (divDiario[CFG.CERT_STATE_KEY] ||= {
+      consultado: false,
+      publicacaoEncontrada: null,
+      dataDisponibilizacaoISO: null,
+      dataDisponibilizacaoExtenso: null,
+      numeroProcesso,
+      numeroProcessoMasc: null,
+      partes: [],
+      advogados: [],
+      erro: null,
+    });
 
     try {
-      renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: carregando...");
-      const json = await requestJSON(urlApi);
-      const advs = extrairTodosAdvogados(json);
+      renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: consultando...");
+      state.consultado = false;
+      state.erro = null;
 
-      if (!advs.length) {
+      const json = await requestJSON(urlApi);
+      const item = escolherItemDaResposta(json, numeroProcesso);
+
+      if (!item) {
+        state.consultado = true;
+        state.publicacaoEncontrada = false;
+        state.partes = [];
+        state.advogados = [];
+        state.dataDisponibilizacaoISO = null;
+        state.dataDisponibilizacaoExtenso = null;
+
         renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: nao encontrados.");
-        U.debug("[ComunicaDJ] API JSON sem advogados", json);
-        return;
+      } else {
+        const advs = extrairAdvogadosDoItem(item);
+        const partes = extrairPartes(item);
+
+        state.consultado = true;
+        state.publicacaoEncontrada = true;
+        state.advogados = advs;
+        state.partes = partes;
+        state.dataDisponibilizacaoISO = item.data_disponibilizacao || null;
+        state.dataDisponibilizacaoExtenso = state.dataDisponibilizacaoISO ? dataISOParaExtenso(state.dataDisponibilizacaoISO) : "";
+        state.numeroProcessoMasc = item.numeroprocessocommascara || null;
+
+        if (!advs.length) {
+          renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: nao encontrados.");
+        } else {
+          renderAdvogadosEmLinhas(bloco, advs, "Advogados da comunicacao:");
+        }
       }
 
-      renderAdvogadosEmLinhas(bloco, advs, "Advogados da comunicacao:");
+      inserirBotaoCertidaoDepoisDoAdv(divDiario, () => {
+        const st = divDiario[CFG.CERT_STATE_KEY];
+        const texto = montarCertidaoTexto(st || {});
+        abrirModalCertidao(texto);
+      });
     } catch (e) {
-      renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: erro ao consultar a API.");
       U.err("[ComunicaDJ] Erro API:", e);
+
+      state.consultado = true;
+      state.publicacaoEncontrada = false;
+      state.advogados = [];
+      state.partes = [];
+      state.erro = "erro_api";
+
+      renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: erro ao consultar a API.");
+
+      inserirBotaoCertidaoDepoisDoAdv(divDiario, () => {
+        const st = divDiario[CFG.CERT_STATE_KEY];
+        const texto = montarCertidaoTexto(st || {});
+        abrirModalCertidao(texto);
+      });
     }
   }
 
@@ -1154,22 +1460,23 @@ const ModComunicaDJ = (() => {
     const divDiario = acharDivDiario(infoPPE);
     if (!divDiario) return;
 
-    const m = (divDiario.textContent || "").match(/(\d{2}\/\d{2}\/\d{4})/);
-    if (!m) return;
+    const dataBR = lerDataDoDivDiario(divDiario);
+    if (!dataBR) return;
 
-    const dataIniISO = dataBRparaISO(m[1]);
+    const dataIniISO = dataBRparaISO(dataBR);
     const dataFimISO = dataIniISO ? calcDataFimISO(dataIniISO) : null;
-
     const numeroProcesso = extrairNumeroProcessoDoItem(infoPPE) || extrairNumeroProcessoDoDOM();
-
     if (!dataIniISO || !dataFimISO || !numeroProcesso) return;
 
     const urlWeb = montarUrlComunicaWeb({ dataIniISO, dataFimISO, numeroProcesso });
     const urlApi = montarUrlComunicaApi({ dataIniISO, dataFimISO, numeroProcesso });
 
+    const state = (divDiario[CFG.CERT_STATE_KEY] ||= {});
+    state.numeroProcesso = numeroProcesso;
+
     aplicarBotoesInline(divDiario, {
       onOpenWeb: () => window.open(urlWeb, "_blank", "noopener"),
-      onFetchAdv: () => { buscarEInjetarAdvogados({ divDiario, urlApi }); },
+      onFetchAdv: () => { consultarApiEAtualizarEstado({ divDiario, urlApi, numeroProcesso }); },
     });
   }
 
@@ -1178,7 +1485,13 @@ const ModComunicaDJ = (() => {
     catch (e) { Toast.failure(NAME, e, "apply"); }
   }
 
-  return { NAME, init() {}, apply };
+  function init() {
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") fecharModal();
+    });
+  }
+
+  return { NAME, init, apply };
 })();
 
 
