@@ -1182,13 +1182,13 @@ const ModComunicaDJ = (() => {
 
     const linhas = [];
     linhas.push("");
-    linhas.push(`Certifico que, na data de ${dataDisp}, foi publicada no Diario de Justica Eletronico comunicacao referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
+    linhas.push(`Certifico que, na data de ${dataDisp}, foi publicada no Diario de Justica Eletronico comunicacao referente ao documento de ID _____________`);
     linhas.push("");
 
     if (state?.publicacaoEncontrada === false) {
       linhas.length = 0;
       linhas.push("");
-      linhas.push(`Certifico que realizei consulta ao Diario de Justica Eletronico referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
+      linhas.push(`Certifico que realizei consulta ao Diario de Justica Eletronico referente ao documento de ID _____________.`);
       linhas.push("");
       linhas.push("Apos a consulta, nao foi localizada publicacao correspondente no Diario de Justica Eletronico.");
       linhas.push("");
