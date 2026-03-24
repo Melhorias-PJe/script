@@ -1,9 +1,9 @@
 
 /* ===== banner.js ===== */
 // ==UserScript==
-// @name         PJe TJCE - Automação Unificada
+// @name         PJe TJCE - Automação Unificada (1.1.10 modular)
 // @namespace    local.tjce.pje.unified.automacao
-// @version      1.1.8
+// @version      1.1.10
 // @description  (Build modular) Detecta tipo do select por opções (Meio x Comunicação), estabiliza 'Selecione' com fallback correto, reduz spam de toast e adiciona Copiar ID com ícone ao lado do link.
 // @match        https://pje.tjce.jus.br/pje1grau/*
 // @match        https://pje-treinamento-release.tjce.jus.br/pje1grau/*
@@ -146,6 +146,1207 @@ const U = {
     return prefixes.some(p => hash.startsWith(p));
   },
 };
+
+
+
+/* ===== core/selector-references.js ===== */
+const SelectorCatalogRefsSource = (() => {
+  const references = {
+    "prepararExpediente.prazo.quantidadePrazoAto": {
+      reference: {
+        screen: "Preparar expediente",
+        source: "Mapeado a partir de src/modules/prazoRapido.js",
+        capturedAt: "2026-03-16T15:00:00Z",
+        htmlSnippet: '<input id="formExpediente:destinatariosTable:0:quantidadePrazoAto" name="formExpediente:destinatariosTable:0:quantidadePrazoAto" type="text" value="15">',
+        normalizedSnippet: '<input id="*:destinatariosTable:*:quantidadePrazoAto" name="*:destinatariosTable:*:quantidadePrazoAto" type="text" value="15">',
+      },
+      anchors: {
+        ids: ["destinatariosTable", "quantidadePrazoAto"],
+        classes: ["rich-table-cell"],
+        textNearby: ["Prazo", "Quantidade do prazo", "Destinatarios"],
+      },
+    },
+    "prepararExpediente.destinatarios.tabelaDestinatarios": {
+      reference: {
+        screen: "Preparar expediente",
+        source: "Mapeado a partir de src/modules/prazoRapido.js e src/modules/stabilizer.js",
+        capturedAt: "2026-03-16T15:00:00Z",
+        htmlSnippet: '<table id="formExpediente:destinatariosTable" class="rich-table"><thead><tr><th>Prazo</th></tr></thead><tbody>...</tbody></table>',
+        normalizedSnippet: '<table id="*:destinatariosTable" class="rich-table"><thead><tr><th>Prazo</th></tr></thead><tbody>...</tbody></table>',
+      },
+      anchors: {
+        ids: ["destinatariosTable"],
+        classes: ["rich-table"],
+        textNearby: ["Prazo", "Meio", "Agrupar com"],
+      },
+    },
+    "prepararExpediente.destinatarios.comboAgrupar": {
+      reference: {
+        screen: "Preparar expediente",
+        source: "Mapeado a partir de src/modules/agruparCom.js",
+        capturedAt: "2026-03-16T15:00:00Z",
+        htmlSnippet: '<select id="formExpediente:destinatariosTable:0:comboAgrupar" name="formExpediente:destinatariosTable:0:comboAgrupar"><option>Sistema</option><option>Intimacao</option></select>',
+        normalizedSnippet: '<select id="*:destinatariosTable:*:comboAgrupar" name="*:destinatariosTable:*:comboAgrupar"><option>...</option></select>',
+      },
+      anchors: {
+        ids: ["destinatariosTable", "comboAgrupar", "meioCom"],
+        classes: ["rich-table-cell"],
+        textNearby: ["Diario Eletronico", "Agrupar com", "Sistema"],
+      },
+    },
+    "definirEnderecos.regionDestinatarios": {
+      reference: {
+        screen: "Definir enderecos / destinatarios",
+        source: "Mapeado a partir de src/modules/advogados.js",
+        capturedAt: "2026-03-16T15:00:00Z",
+        htmlSnippet: '<div id="formProcesso:regionDestinatarios" class="rf-p region-destinatarios"><div class="mb-10">...</div></div>',
+        normalizedSnippet: '<div id="*:regionDestinatarios" class="region-destinatarios"><div class="mb-10">...</div></div>',
+      },
+      anchors: {
+        ids: ["regionDestinatarios"],
+        classes: ["mb-10", "region-destinatarios"],
+        textNearby: ["Mostrar todos", "Intimar todos", "Polo ativo"],
+      },
+    },
+    "analisarProcessos.comunicaDj.infoPPE": {
+      reference: {
+        screen: "Analisar processos",
+        source: "Mapeado a partir de src/modules/comunicaDj.js",
+        capturedAt: "2026-03-16T15:00:00Z",
+        htmlSnippet: '<div id="formAnalise:0:infoPPE" class="panel panel-default"><div>Diario Eletronico - 15/03/2026</div></div>',
+        normalizedSnippet: '<div id="*:infoPPE" class="panel panel-default"><div>Diario Eletronico - dd/mm/aaaa</div></div>',
+      },
+      anchors: {
+        ids: ["infoPPE"],
+        classes: ["panel", "panel-default"],
+        textNearby: ["Diario Eletronico", "Publicacao", "Numero do processo"],
+      },
+    },
+  };
+
+  return { references };
+})();
+
+
+
+/* ===== core/selectors.js ===== */
+const SelectorCatalogSource = (() => {
+  const meta = {
+    version: "1.0.0",
+    hash: "",
+    updatedAt: "2026-03-16T15:00:00Z",
+  };
+
+  const selectors = {
+    prepararExpediente: {
+      prazo: {
+        quantidadePrazoAto: {
+          label: "Campo de prazo por destinatario",
+          description: "Input de quantidade de prazo usado na grade de destinatarios do expediente.",
+          type: "input",
+          selectors: [
+            'input[id$=":quantidadePrazoAto"]',
+            'input[name$=":quantidadePrazoAto"]',
+            'table[id$=":destinatariosTable"] input[id*="quantidadePrazoAto"]',
+          ],
+          status: "validated",
+          notes: "Prefere sufixo JSF para resistir a prefixos dinamicos.",
+          lastValidated: "2026-03-16T15:00:00Z",
+          container: {
+            selectors: [
+              'table[id$=":destinatariosTable"]',
+              'table[id*=":destinatariosTable"]',
+            ],
+            strategy: "first-match",
+          },
+        },
+      },
+      destinatarios: {
+        tabelaDestinatarios: {
+          label: "Tabela de destinatarios",
+          description: "Grade principal onde ficam meio, prazo e agrupamento de comunicacoes.",
+          type: "table",
+          selectors: [
+            'table[id$=":destinatariosTable"]',
+            'table[id*=":destinatariosTable"]',
+          ],
+          status: "validated",
+          notes: "Usada como ancora estrutural para outros campos dentro da tela.",
+          lastValidated: "2026-03-16T15:00:00Z",
+        },
+        comboAgrupar: {
+          label: "Select Agrupar com",
+          description: "Select de agrupamento usado quando o meio de comunicacao e Diario Eletronico.",
+          type: "select",
+          selectors: [
+            'select[id$=":comboAgrupar"]',
+            'select[name$=":comboAgrupar"]',
+            'table[id$=":destinatariosTable"] select[id*="comboAgrupar"]',
+          ],
+          status: "validated",
+          notes: "O modulo atual usa o seletor por sufixo; a tabela serve de container estavel.",
+          lastValidated: "2026-03-16T15:00:00Z",
+          container: {
+            selectors: [
+              'table[id$=":destinatariosTable"]',
+              'table[id*=":destinatariosTable"]',
+            ],
+            strategy: "first-match",
+          },
+        },
+      },
+    },
+    definirEnderecos: {
+      regionDestinatarios: {
+        label: "Regiao de destinatarios",
+        description: "Container que recebe atualizacoes parciais apos cliques na arvore de polos e advogados.",
+        type: "container",
+        selectors: [
+          '[id$=":regionDestinatarios"]',
+          '[id*=":regionDestinatarios"]',
+        ],
+        status: "validated",
+        notes: "Boa ancora para MutationObserver durante updates AJAX do RichFaces.",
+        lastValidated: "2026-03-16T15:00:00Z",
+      },
+    },
+    analisarProcessos: {
+      comunicaDj: {
+        infoPPE: {
+          label: "Bloco de informacao da publicacao",
+          description: "Container usado para localizar publicacoes no Diario Eletronico e inserir acoes inline.",
+          type: "container",
+          selectors: [
+            'div[id$=":infoPPE"]',
+            'div[id*=":infoPPE"]',
+          ],
+          status: "validated",
+          notes: "Sufixo :infoPPE apareceu consistente nas telas analisadas.",
+          lastValidated: "2026-03-16T15:00:00Z",
+        },
+      },
+    },
+    pac: {},
+    comuns: {},
+  };
+
+  return { meta, selectors };
+})();
+
+const SelectorCatalog = (() => {
+  const STORAGE_KEY = "pje-selector-catalog";
+
+  let activeCatalog = {
+    meta: {
+      version: SelectorCatalogSource.meta.version,
+      hash: "pending",
+      updatedAt: SelectorCatalogSource.meta.updatedAt,
+    },
+    selectors: deepClone(SelectorCatalogSource.selectors),
+    references: deepClone(SelectorCatalogRefsSource.references),
+    source: "embedded",
+  };
+
+  let readyPromise = null;
+
+  function deepClone(value) {
+    return value == null ? value : JSON.parse(JSON.stringify(value));
+  }
+
+  function isObject(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function sortValue(value) {
+    if (Array.isArray(value)) return value.map(sortValue);
+    if (!isObject(value)) return value;
+    return Object.keys(value).sort().reduce((acc, key) => {
+      acc[key] = sortValue(value[key]);
+      return acc;
+    }, {});
+  }
+
+  function stableStringify(value, space = 0) {
+    return JSON.stringify(sortValue(value), null, space);
+  }
+
+  async function computeHash(payload) {
+    const text = typeof payload === "string" ? payload : stableStringify(payload);
+    try {
+      if (window.crypto?.subtle && typeof TextEncoder === "function") {
+        const bytes = new TextEncoder().encode(text);
+        const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+        const hash = Array.from(new Uint8Array(digest))
+          .map((n) => n.toString(16).padStart(2, "0"))
+          .join("");
+        return `sha256-${hash}`;
+      }
+    } catch (_) {}
+    return `hash-${U.hash(text)}`;
+  }
+
+  function flattenReferencesMap(references) {
+    return isObject(references) ? references : {};
+  }
+
+  function normalizeLoadedCatalog(payload, sourceLabel) {
+    if (!isObject(payload)) return null;
+    return {
+      meta: isObject(payload.meta) ? payload.meta : null,
+      selectors: isObject(payload.selectors) ? payload.selectors : {},
+      references: flattenReferencesMap(payload.references),
+      source: sourceLabel || payload.source || "unknown",
+    };
+  }
+
+  async function buildEmbeddedCatalog() {
+    const selectors = deepClone(SelectorCatalogSource.selectors);
+    const references = deepClone(SelectorCatalogRefsSource.references);
+    const meta = {
+      version: SelectorCatalogSource.meta.version,
+      updatedAt: SelectorCatalogSource.meta.updatedAt,
+      hash: await computeHash({
+        version: SelectorCatalogSource.meta.version,
+        updatedAt: SelectorCatalogSource.meta.updatedAt,
+        selectors,
+        references,
+      }),
+    };
+    return { meta, selectors, references, source: "embedded" };
+  }
+
+  function hasChromeStorage() {
+    return Boolean(
+      typeof chrome !== "undefined" &&
+      chrome &&
+      chrome.storage &&
+      chrome.storage.local &&
+      typeof chrome.storage.local.get === "function" &&
+      typeof chrome.storage.local.set === "function"
+    );
+  }
+
+  function readLocalStorage() {
+    try {
+      if (typeof localStorage === "undefined") return null;
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function loadLocalCatalog() {
+    try {
+      if (hasChromeStorage()) {
+        const payload = await new Promise((resolve, reject) => {
+          chrome.storage.local.get([STORAGE_KEY], (result) => {
+            const err = chrome.runtime?.lastError;
+            if (err) return reject(new Error(err.message));
+            resolve(result?.[STORAGE_KEY] || null);
+          });
+        });
+        return normalizeLoadedCatalog(payload, "chrome.storage.local");
+      }
+      return normalizeLoadedCatalog(readLocalStorage(), "localStorage");
+    } catch (error) {
+      U.err("[SelectorCatalog] Falha ao carregar catalogo local:", error);
+      return null;
+    }
+  }
+
+  async function saveLocalCatalog(payload) {
+    try {
+      if (hasChromeStorage()) {
+        await new Promise((resolve, reject) => {
+          chrome.storage.local.set({ [STORAGE_KEY]: payload }, () => {
+            const err = chrome.runtime?.lastError;
+            if (err) return reject(new Error(err.message));
+            resolve();
+          });
+        });
+        return true;
+      }
+
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        return true;
+      }
+    } catch (error) {
+      U.err("[SelectorCatalog] Falha ao salvar catalogo local:", error);
+    }
+    return false;
+  }
+
+  async function getLocalCatalogMeta() {
+    const payload = await loadLocalCatalog();
+    return payload?.meta || null;
+  }
+
+  async function syncCatalog() {
+    if (readyPromise) return readyPromise;
+
+    readyPromise = (async () => {
+      const embedded = await buildEmbeddedCatalog();
+      activeCatalog = embedded;
+
+      const local = await loadLocalCatalog();
+      const sameHash = local?.meta?.hash && local.meta.hash === embedded.meta.hash;
+
+      if (sameHash) {
+        activeCatalog = { ...local, source: local.source || "local" };
+        return activeCatalog;
+      }
+
+      await saveLocalCatalog(embedded);
+      activeCatalog = embedded;
+      return activeCatalog;
+    })().catch((error) => {
+      U.err("[SelectorCatalog] Falha no sync; mantendo catalogo embutido:", error);
+      return activeCatalog;
+    });
+
+    return readyPromise;
+  }
+
+  function getActiveCatalog() {
+    return activeCatalog;
+  }
+
+  function getReferenceForPath(path) {
+    return activeCatalog.references?.[path] || null;
+  }
+
+  function resolvePath(object, path) {
+    if (!path || !isObject(object)) return null;
+    const parts = String(path).split(".").filter(Boolean);
+    let current = object;
+    for (const part of parts) {
+      if (!isObject(current) || !(part in current)) return null;
+      current = current[part];
+    }
+    return current;
+  }
+
+  function getSelectorEntry(path) {
+    const raw = resolvePath(activeCatalog.selectors, path);
+    if (!isObject(raw)) return null;
+
+    const refBlock = getReferenceForPath(path) || {};
+    return {
+      ...deepClone(raw),
+      reference: raw.reference || refBlock.reference || null,
+      anchors: raw.anchors || refBlock.anchors || { ids: [], classes: [], textNearby: [] },
+      path,
+    };
+  }
+
+  function normalizeSelectorCandidate(candidate) {
+    if (typeof candidate === "string") return candidate.trim();
+    if (isObject(candidate) && typeof candidate.value === "string") return candidate.value.trim();
+    return "";
+  }
+
+  function normalizeContainer(entry) {
+    if (!entry?.container) return [];
+    if (typeof entry.container === "string") return [entry.container];
+    if (Array.isArray(entry.container)) return entry.container.map(normalizeSelectorCandidate).filter(Boolean);
+    if (isObject(entry.container) && Array.isArray(entry.container.selectors)) {
+      return entry.container.selectors.map(normalizeSelectorCandidate).filter(Boolean);
+    }
+    return [];
+  }
+
+  function resolveContainer(entry, root = document) {
+    const containerSelectors = normalizeContainer(entry);
+    if (!containerSelectors.length) return root;
+
+    for (const selector of containerSelectors) {
+      try {
+        const node = root.querySelector(selector);
+        if (node) return node;
+      } catch (error) {
+        U.debug("[SelectorCatalog] Container invalido:", selector, error);
+      }
+    }
+
+    return root;
+  }
+
+  function validateCatalogEntry(entry) {
+    const errors = [];
+
+    if (!isObject(entry)) errors.push("Entrada ausente ou invalida.");
+    if (!entry?.label) errors.push("Campo label obrigatorio.");
+    if (!entry?.description) errors.push("Campo description obrigatorio.");
+    if (!entry?.type) errors.push("Campo type obrigatorio.");
+    if (!Array.isArray(entry?.selectors) || !entry.selectors.length) errors.push("Campo selectors deve conter ao menos um seletor.");
+    if (!entry?.status) errors.push("Campo status obrigatorio.");
+    if (!entry?.lastValidated) errors.push("Campo lastValidated obrigatorio.");
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+
+  function queryByCatalog(path, root = document) {
+    const entry = getSelectorEntry(path);
+    const validation = validateCatalogEntry(entry);
+    if (!validation.valid) {
+      U.debug("[SelectorCatalog] Entrada invalida:", path, validation.errors);
+      return null;
+    }
+
+    const scope = resolveContainer(entry, root);
+    const selectors = entry.selectors.map(normalizeSelectorCandidate).filter(Boolean);
+
+    for (const selector of selectors) {
+      try {
+        const found = scope.querySelector(selector);
+        if (found) return found;
+      } catch (error) {
+        U.debug("[SelectorCatalog] Seletor invalido:", path, selector, error);
+      }
+    }
+
+    return null;
+  }
+
+  function queryAllByCatalog(path, root = document) {
+    const entry = getSelectorEntry(path);
+    const validation = validateCatalogEntry(entry);
+    if (!validation.valid) {
+      U.debug("[SelectorCatalog] Entrada invalida:", path, validation.errors);
+      return [];
+    }
+
+    const scope = resolveContainer(entry, root);
+    const selectors = entry.selectors.map(normalizeSelectorCandidate).filter(Boolean);
+    const seen = new Set();
+    const items = [];
+
+    for (const selector of selectors) {
+      try {
+        scope.querySelectorAll(selector).forEach((node) => {
+          if (seen.has(node)) return;
+          seen.add(node);
+          items.push(node);
+        });
+      } catch (error) {
+        U.debug("[SelectorCatalog] Seletor invalido:", path, selector, error);
+      }
+    }
+
+    return items;
+  }
+
+  function debugSelectorResolution(path, root = document) {
+    const entry = getSelectorEntry(path);
+    const validation = validateCatalogEntry(entry);
+    const scope = entry ? resolveContainer(entry, root) : root;
+    const attempts = [];
+
+    if (entry && validation.valid) {
+      for (const selector of entry.selectors.map(normalizeSelectorCandidate).filter(Boolean)) {
+        try {
+          const node = scope.querySelector(selector);
+          attempts.push({
+            selector,
+            matched: Boolean(node),
+            tagName: node?.tagName || null,
+          });
+        } catch (error) {
+          attempts.push({
+            selector,
+            matched: false,
+            error: String(error?.message || error),
+          });
+        }
+      }
+    }
+
+    const result = {
+      path,
+      validation,
+      entry,
+      scope,
+      attempts,
+      found: attempts.find((item) => item.matched) || null,
+    };
+
+    U.debug("[SelectorCatalog] debugSelectorResolution", result);
+    return result;
+  }
+
+  function exportCatalogJSON(space = 2) {
+    return JSON.stringify(activeCatalog, null, space);
+  }
+
+  const api = {
+    loadLocalCatalog,
+    saveLocalCatalog,
+    getLocalCatalogMeta,
+    syncCatalog,
+    getActiveCatalog,
+    getSelectorEntry,
+    queryByCatalog,
+    queryAllByCatalog,
+    validateCatalogEntry,
+    debugSelectorResolution,
+    exportCatalogJSON,
+    stableStringify,
+  };
+
+  syncCatalog();
+
+  return api;
+})();
+
+const loadLocalCatalog = (...args) => SelectorCatalog.loadLocalCatalog(...args);
+const saveLocalCatalog = (...args) => SelectorCatalog.saveLocalCatalog(...args);
+const getLocalCatalogMeta = (...args) => SelectorCatalog.getLocalCatalogMeta(...args);
+const syncCatalog = (...args) => SelectorCatalog.syncCatalog(...args);
+const getActiveCatalog = (...args) => SelectorCatalog.getActiveCatalog(...args);
+const getSelectorEntry = (...args) => SelectorCatalog.getSelectorEntry(...args);
+const queryByCatalog = (...args) => SelectorCatalog.queryByCatalog(...args);
+const queryAllByCatalog = (...args) => SelectorCatalog.queryAllByCatalog(...args);
+const validateCatalogEntry = (...args) => SelectorCatalog.validateCatalogEntry(...args);
+const debugSelectorResolution = (...args) => SelectorCatalog.debugSelectorResolution(...args);
+
+if (typeof window !== "undefined") {
+  window.SelectorCatalog = SelectorCatalog;
+  window.loadLocalCatalog = loadLocalCatalog;
+  window.saveLocalCatalog = saveLocalCatalog;
+  window.getLocalCatalogMeta = getLocalCatalogMeta;
+  window.syncCatalog = syncCatalog;
+  window.getActiveCatalog = getActiveCatalog;
+  window.getSelectorEntry = getSelectorEntry;
+  window.queryByCatalog = queryByCatalog;
+  window.queryAllByCatalog = queryAllByCatalog;
+  window.validateCatalogEntry = validateCatalogEntry;
+  window.debugSelectorResolution = debugSelectorResolution;
+}
+
+
+
+/* ===== core/selectorCapture.js ===== */
+const SelectorCapture = (() => {
+  const NOISY_CLASSES = new Set([
+    "ui-state-hover",
+    "ui-state-focus",
+    "ui-state-active",
+    "rf-ddm-itm-sel",
+    "select2-hidden-accessible",
+    "focus",
+    "hover",
+    "active",
+  ]);
+  const DEFAULT_SCAN_SELECTOR = [
+    "input",
+    "select",
+    "textarea",
+    "button",
+    "a",
+    "table",
+    "fieldset",
+    'div[id]',
+    'span[id]',
+  ].join(", ");
+  const PJE_KEYWORDS = [
+    "processo",
+    "destinatario",
+    "destinatarios",
+    "prazo",
+    "expediente",
+    "intimacao",
+    "comunicacao",
+    "comunicacao",
+    "diario",
+    "dj",
+    "advogado",
+    "advogados",
+    "polo",
+    "endereco",
+    "enderecos",
+    "documento",
+    "expediente",
+    "infoppe",
+    "select2",
+    "rich",
+    "rf-",
+  ];
+
+  function cssEscape(value) {
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(value);
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, (ch) => `\\${ch}`);
+  }
+
+  function norm(text) {
+    return String(text || "").replace(/\s+/g, " ").trim();
+  }
+
+  function normLower(text) {
+    return norm(text)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  }
+
+  function normIdLike(value) {
+    return String(value || "")
+      .replace(/\d+/g, "*")
+      .replace(/:[*]+/g, ":*");
+  }
+
+  function attrMap(element) {
+    const out = {};
+    for (const attr of Array.from(element?.attributes || [])) {
+      if (!attr?.name) continue;
+      const name = attr.name;
+      const value = attr.value || "";
+      if (
+        name === "id" ||
+        name === "class" ||
+        name === "style" ||
+        name.startsWith("on")
+      ) continue;
+      if (
+        name === "name" ||
+        name === "role" ||
+        name === "title" ||
+        name === "type" ||
+        name === "aria-label" ||
+        name === "placeholder" ||
+        name.startsWith("data-")
+      ) out[name] = value;
+    }
+    return out;
+  }
+
+  function getElementTextFingerprint(element) {
+    return norm([
+      element?.textContent,
+      element?.getAttribute?.("title"),
+      element?.getAttribute?.("aria-label"),
+      element?.getAttribute?.("placeholder"),
+    ].filter(Boolean).join(" "));
+  }
+
+  function getStableClasses(element) {
+    return Array.from(element?.classList || []).filter((name) => {
+      if (!name) return false;
+      if (NOISY_CLASSES.has(name)) return false;
+      if (/^\d+$/.test(name)) return false;
+      if (/\b(?:selected|opened|closed|highlight)\b/i.test(name)) return false;
+      return true;
+    });
+  }
+
+  function buildIdCandidates(idValue) {
+    if (!idValue) return [];
+    const out = [`#${cssEscape(idValue)}`];
+
+    if (idValue.includes(":")) {
+      const parts = idValue.split(":").filter(Boolean);
+      const last = parts[parts.length - 1];
+      if (last) {
+        out.push(`[id$=":${last}"]`);
+        out.push(`[id*="${last}"]`);
+      }
+
+      if (parts.length >= 2) {
+        const tail = parts.slice(-2).join(":");
+        out.push(`[id$=":${tail}"]`);
+      }
+    }
+
+    const normalized = normIdLike(idValue);
+    if (normalized && normalized !== idValue) out.push(`[id*="${normalized.split(":").pop()}"]`);
+    return out;
+  }
+
+  function buildNameCandidates(nameValue) {
+    if (!nameValue) return [];
+    const out = [`[name="${nameValue}"]`];
+    if (nameValue.includes(":")) {
+      const parts = nameValue.split(":").filter(Boolean);
+      const last = parts[parts.length - 1];
+      if (last) out.push(`[name$=":${last}"]`);
+    }
+    return out;
+  }
+
+  function buildClassCandidates(tagName, classes) {
+    if (!classes.length) return [];
+    const tag = tagName.toLowerCase();
+    const out = [];
+    out.push(`${tag}.${classes[0]}`);
+    if (classes.length >= 2) out.push(`${tag}.${classes[0]}.${classes[1]}`);
+    return out;
+  }
+
+  function buildAttrCandidates(tagName, attrs) {
+    const tag = tagName.toLowerCase();
+    const out = [];
+    Object.entries(attrs).forEach(([name, value]) => {
+      if (!value) return;
+      if (name === "type") out.push(`${tag}[type="${value}"]`);
+      else out.push(`${tag}[${name}="${value}"]`);
+    });
+    return out;
+  }
+
+  function getElementIdentity(element) {
+    return [
+      element?.tagName || "",
+      element?.id || "",
+      element?.getAttribute?.("name") || "",
+      Array.from(element?.classList || []).join("."),
+      getElementTextFingerprint(element).slice(0, 120),
+    ].join("|");
+  }
+
+  function isVisibleElement(element) {
+    if (!element || element.nodeType !== 1) return false;
+    if (element.hidden) return false;
+    if (element.getAttribute("aria-hidden") === "true" && !element.matches("select")) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(element) : null;
+    if (style) {
+      if (style.display === "none" || style.visibility === "hidden") return false;
+    }
+    return true;
+  }
+
+  function scoreElementRelevance(element) {
+    if (!element || element.nodeType !== 1) return 0;
+
+    let score = 0;
+    const tag = element.tagName.toLowerCase();
+    const idLower = normLower(element.id);
+    const nameLower = normLower(element.getAttribute("name"));
+    const classLower = normLower(Array.from(element.classList || []).join(" "));
+    const textLower = normLower(getElementTextFingerprint(element));
+    const role = normLower(element.getAttribute("role"));
+    const type = normLower(element.getAttribute("type"));
+
+    if (tag === "select") score += 40;
+    if (tag === "input") score += 32;
+    if (tag === "textarea") score += 28;
+    if (tag === "table") score += 26;
+    if (tag === "button") score += 18;
+    if (tag === "a") score += 12;
+    if (tag === "div" && element.id) score += 10;
+    if (tag === "span" && element.id) score += 8;
+
+    if (element.id) score += 18;
+    if (element.getAttribute("name")) score += 14;
+    if (element.matches("select.select2-hidden-accessible, [role='combobox'], .select2-hidden-accessible")) score += 20;
+    if (classLower.includes("rich-") || classLower.includes("rf-")) score += 16;
+    if (role.includes("combobox")) score += 16;
+    if (type === "hidden") score -= 25;
+    if (type === "submit" || type === "button") score += 4;
+
+    for (const keyword of PJE_KEYWORDS) {
+      if (idLower.includes(keyword)) score += 10;
+      if (nameLower.includes(keyword)) score += 8;
+      if (classLower.includes(keyword)) score += 5;
+      if (textLower.includes(keyword)) score += 3;
+    }
+
+    if (/:\d+:/.test(element.id || "")) score += 8;
+    if (/destinatariosTable|quantidadePrazoAto|comboAgrupar|infoPPE|regionDestinatarios/.test(element.id || "")) score += 22;
+    if (textLower.includes("diario eletronico")) score += 14;
+    if (textLower.includes("mostrar todos") || textLower.includes("intimar todos")) score += 10;
+
+    if (!isVisibleElement(element)) score -= 12;
+    return score;
+  }
+
+  function inferModuleFromElement(element) {
+    const fingerprint = normLower([
+      element?.id,
+      element?.getAttribute?.("name"),
+      Array.from(element?.classList || []).join(" "),
+      getElementTextFingerprint(element),
+      element?.closest("table, form, div, section")?.id || "",
+    ].join(" "));
+
+    if (fingerprint.includes("prazo") || fingerprint.includes("destinatariostable") || fingerprint.includes("comboagrupar")) {
+      return "prepararExpediente";
+    }
+    if (fingerprint.includes("regiondestinatarios") || fingerprint.includes("polo") || fingerprint.includes("advogado")) {
+      return "definirEnderecos";
+    }
+    if (fingerprint.includes("infoppe") || fingerprint.includes("diario") || fingerprint.includes("comunic")) {
+      return "analisarProcessos";
+    }
+    if (fingerprint.includes("pac")) return "pac";
+    return "comuns";
+  }
+
+  function inferLogicalKey(element) {
+    const idValue = element?.id || "";
+    const nameValue = element?.getAttribute?.("name") || "";
+    const source = idValue || nameValue || "";
+    if (source.includes(":")) return source.split(":").filter(Boolean).slice(-1)[0] || "elemento";
+    if (source) return source.replace(/[^\w]+/g, "_");
+
+    const text = normLower(getElementTextFingerprint(element));
+    if (text.includes("prazo")) return "prazo";
+    if (text.includes("diario")) return "diario";
+    if (text.includes("advogado")) return "advogados";
+    return element?.tagName?.toLowerCase() || "elemento";
+  }
+
+  function inferPath(element, options = {}) {
+    if (options.path) return options.path;
+    const moduleName = options.module || inferModuleFromElement(element);
+    const key = inferLogicalKey(element);
+    return `${moduleName}.${key}`;
+  }
+
+  function detectContainer(element) {
+    let node = element?.parentElement || null;
+    while (node) {
+      const classes = getStableClasses(node);
+      if (node.id) {
+        return {
+          selectors: buildIdCandidates(node.id).slice(0, 3),
+          strategy: "first-match",
+        };
+      }
+      if (classes.length) {
+        return {
+          selectors: buildClassCandidates(node.tagName, classes).slice(0, 2),
+          strategy: "first-match",
+        };
+      }
+      if (/^(TABLE|FORM|SECTION|ARTICLE)$/.test(node.tagName)) {
+        return {
+          selectors: [node.tagName.toLowerCase()],
+          strategy: "first-match",
+        };
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function collectNearbyText(element) {
+    const texts = [];
+    const pushText = (value) => {
+      const clean = norm(value);
+      if (clean && !texts.includes(clean)) texts.push(clean);
+    };
+
+    pushText(element?.getAttribute?.("aria-label"));
+    pushText(element?.getAttribute?.("title"));
+
+    const label = element?.id ? document.querySelector(`label[for="${cssEscape(element.id)}"]`) : null;
+    pushText(label?.textContent);
+    pushText(element?.closest("td, th, div, span, label")?.textContent);
+    pushText(element?.previousElementSibling?.textContent);
+    pushText(element?.parentElement?.previousElementSibling?.textContent);
+
+    return texts.slice(0, 5);
+  }
+
+  function getHtmlSnippet(element) {
+    return norm(element?.outerHTML || "").slice(0, 1000);
+  }
+
+  function getNormalizedSnippet(element) {
+    return getHtmlSnippet(element)
+      .replace(/\bid="[^"]+"/g, (match) => {
+        const idValue = match.slice(4, -1);
+        return `id="${normIdLike(idValue)}"`;
+      })
+      .replace(/\bname="[^"]+"/g, (match) => {
+        const nameValue = match.slice(6, -1);
+        return `name="${normIdLike(nameValue)}"`;
+      })
+      .replace(/\bvalue="[^"]{8,}"/g, 'value="..."');
+  }
+
+  function unique(items) {
+    return Array.from(new Set(items.filter(Boolean)));
+  }
+
+  function inferType(element) {
+    const tag = element?.tagName?.toLowerCase() || "element";
+    if (tag === "input" || tag === "select" || tag === "textarea" || tag === "button") return tag;
+    if (tag === "table" || tag === "form") return tag;
+    return "container";
+  }
+
+  function buildCatalogEntry(element, options = {}) {
+    if (!element || element.nodeType !== 1) throw new Error("Elemento DOM invalido.");
+
+    const tagName = element.tagName.toLowerCase();
+    const idValue = element.id || "";
+    const nameValue = element.getAttribute("name") || "";
+    const classes = getStableClasses(element);
+    const attrs = attrMap(element);
+    const container = detectContainer(element);
+    const selectors = unique([
+      ...buildIdCandidates(idValue),
+      ...buildNameCandidates(nameValue),
+      ...buildClassCandidates(tagName, classes),
+      ...buildAttrCandidates(tagName, attrs),
+    ]).slice(0, 8);
+    const nearbyText = collectNearbyText(element);
+
+    const catalogEntry = {
+      label: options.label || `${tagName} ${idValue || nameValue || classes[0] || "sem-id"}`,
+      description: options.description || "Entrada capturada automaticamente a partir do DOM atual.",
+      type: options.type || inferType(element),
+      selectors,
+      status: options.status || "mapped",
+      notes: options.notes || "Revisar antes de promover para o catalogo oficial.",
+      lastValidated: new Date().toISOString(),
+      container,
+      reference: {
+        screen: options.screen || document.title || window.location.pathname,
+        source: options.source || "SelectorCapture.capture",
+        capturedAt: new Date().toISOString(),
+        htmlSnippet: getHtmlSnippet(element),
+        normalizedSnippet: getNormalizedSnippet(element),
+      },
+      anchors: {
+        ids: unique([
+          ...selectors.filter((item) => item.startsWith("[id")).map((item) => item.replace(/^[^\"]+"?/, "")),
+          ...(idValue ? idValue.split(":").filter(Boolean) : []),
+          ...(container?.selectors || []).filter((item) => /\[id/.test(item)),
+        ]).slice(0, 6),
+        classes: classes.slice(0, 6),
+        textNearby: nearbyText,
+      },
+    };
+
+    return {
+      path: inferPath(element, options),
+      catalogEntry,
+      selectorEntry: {
+        label: catalogEntry.label,
+        description: catalogEntry.description,
+        type: catalogEntry.type,
+        selectors: catalogEntry.selectors,
+        status: catalogEntry.status,
+        notes: catalogEntry.notes,
+        lastValidated: catalogEntry.lastValidated,
+        container: catalogEntry.container,
+      },
+      referenceEntry: {
+        reference: catalogEntry.reference,
+        anchors: catalogEntry.anchors,
+      },
+      diagnostics: {
+        tagName,
+        id: idValue,
+        name: nameValue,
+        classes,
+        attributes: attrs,
+        textNearby: nearbyText,
+        container,
+        relevanceScore: scoreElementRelevance(element),
+      },
+    };
+  }
+
+  function capture(target, options = {}) {
+    const element = typeof target === "string" ? document.querySelector(target) : target;
+    if (!element) throw new Error("Nao encontrei o elemento informado.");
+    return buildCatalogEntry(element, options);
+  }
+
+  async function copyToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  }
+
+  function toJSON(result, space = 2) {
+    return JSON.stringify(result, null, space);
+  }
+
+  function shouldIncludeInScan(element, options = {}) {
+    const minScore = Number.isFinite(options.minScore) ? options.minScore : 18;
+    if (!element || element.nodeType !== 1) return false;
+    if (options.onlyVisible !== false && !isVisibleElement(element)) return false;
+    if (element.matches('input[type="hidden"], script, style, noscript')) return false;
+    return scoreElementRelevance(element) >= minScore;
+  }
+
+  function scanDOM(options = {}) {
+    const root = options.root || document;
+    const selector = options.selector || DEFAULT_SCAN_SELECTOR;
+    const maxEntries = Number.isFinite(options.maxEntries) ? options.maxEntries : 40;
+    const nodes = Array.from(root.querySelectorAll(selector));
+    const seen = new Set();
+    const results = [];
+
+    for (const element of nodes) {
+      if (!shouldIncludeInScan(element, options)) continue;
+
+      const identity = getElementIdentity(element);
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+
+      try {
+        const result = buildCatalogEntry(element, options);
+        results.push(result);
+      } catch (error) {
+        console.error("[SelectorCapture] Falha ao varrer elemento:", error, element);
+      }
+    }
+
+    results.sort((a, b) => {
+      const scoreDiff = (b.diagnostics?.relevanceScore || 0) - (a.diagnostics?.relevanceScore || 0);
+      if (scoreDiff) return scoreDiff;
+      return String(a.path).localeCompare(String(b.path));
+    });
+
+    return {
+      scannedAt: new Date().toISOString(),
+      screen: options.screen || document.title || window.location.pathname,
+      totalNodes: nodes.length,
+      totalRelevant: results.length,
+      entries: results.slice(0, maxEntries),
+    };
+  }
+
+  function scanPje(options = {}) {
+    const root = options.root || document;
+    const selector = options.selector || [
+      'input[id], input[name]',
+      'select[id], select[name], select.select2-hidden-accessible',
+      'textarea[id], textarea[name]',
+      'table[id*="destinatarios"], table[id], table.rich-table',
+      'div[id*="infoPPE"], div[id*="regionDestinatarios"], div.rich-tree',
+      'span[id*="meioCom"], span.select2, span.select2-container',
+      'a[title], a.btn.btn-default, a[href*="documento/download"]',
+      'button[id], button[name]',
+    ].join(", ");
+
+    return scanDOM({
+      ...options,
+      root,
+      selector,
+      minScore: Number.isFinite(options.minScore) ? options.minScore : 16,
+      maxEntries: Number.isFinite(options.maxEntries) ? options.maxEntries : 80,
+    });
+  }
+
+  function scanToCatalogObject(options = {}) {
+    const scan = scanPje(options);
+    const selectors = {};
+    const references = {};
+
+    scan.entries.forEach((item) => {
+      const parts = String(item.path || "").split(".").filter(Boolean);
+      if (!parts.length) return;
+
+      let cursor = selectors;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        if (!cursor[part] || typeof cursor[part] !== "object" || Array.isArray(cursor[part])) cursor[part] = {};
+        cursor = cursor[part];
+      }
+
+      cursor[parts[parts.length - 1]] = item.selectorEntry;
+      references[item.path] = item.referenceEntry;
+    });
+
+    return {
+      meta: {
+        version: options.version || "0.1.0-scan",
+        hash: "",
+        updatedAt: new Date().toISOString(),
+      },
+      selectors,
+      references,
+      scan,
+    };
+  }
+
+  function toJS(result) {
+    if (result?.entries && Array.isArray(result.entries)) {
+      return result.entries.map((entry) => toJS(entry)).join("\n\n");
+    }
+
+    const path = result?.path || "modulo.campo";
+    const selectorJson = JSON.stringify(result?.selectorEntry || {}, null, 2)
+      .split("\n")
+      .map((line, index) => index === 0 ? line : `  ${line}`)
+      .join("\n");
+    const referenceJson = JSON.stringify(result?.referenceEntry || {}, null, 2)
+      .split("\n")
+      .map((line, index) => index === 0 ? line : `  ${line}`)
+      .join("\n");
+
+    return [
+      `// selectors.js`,
+      `"${path}": ${selectorJson},`,
+      "",
+      `// selector-references.js`,
+      `"${path}": ${referenceJson},`,
+    ].join("\n");
+  }
+
+  async function copyResult(result, mode = "json") {
+    const text = mode === "js" ? toJS(result) : toJSON(result);
+    await copyToClipboard(text);
+    return text;
+  }
+
+  function pickNextClick(options = {}) {
+    const handler = async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      document.removeEventListener("click", handler, true);
+
+      try {
+        const result = capture(event.target, options);
+        console.log("[SelectorCapture] Resultado:", result);
+        if (options.copy !== false) await copyResult(result, options.mode || "json");
+      } catch (error) {
+        console.error("[SelectorCapture] Falha ao capturar:", error);
+      }
+    };
+
+    document.addEventListener("click", handler, true);
+    console.log("[SelectorCapture] Clique no elemento que deseja mapear.");
+    return () => document.removeEventListener("click", handler, true);
+  }
+
+  return {
+    capture,
+    buildCatalogEntry,
+    scanDOM,
+    scanPje,
+    scanToCatalogObject,
+    copyResult,
+    pickNextClick,
+    toJSON,
+    toJS,
+  };
+})();
+
+if (typeof window !== "undefined") window.SelectorCapture = SelectorCapture;
 
 
 
@@ -759,7 +1960,19 @@ const Stabilizer = (() => {
     });
   }
 
-  return { scanAndAttach };
+  return {
+    scanAndAttach,
+    __testing: {
+      getOptionsSignature,
+      stableSignatureCheck,
+      canAutoFix,
+      tryFix,
+      attach,
+      anyTargetExists,
+      listOptionsTop,
+      getRowHint,
+    },
+  };
 })();
 
 
@@ -1182,13 +2395,13 @@ const ModComunicaDJ = (() => {
 
     const linhas = [];
     linhas.push("");
-    linhas.push(`Certifico que, na data de ${dataDisp}, foi publicada no Diario de Justica Eletronico comunicacao referente ao documento de ID _____________`);
+    linhas.push(`Certifico que, na data de ${dataDisp}, foi publicada no Diario de Justica Eletronico comunicacao referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
     linhas.push("");
 
     if (state?.publicacaoEncontrada === false) {
       linhas.length = 0;
       linhas.push("");
-      linhas.push(`Certifico que realizei consulta ao Diario de Justica Eletronico referente ao documento de ID _____________.`);
+      linhas.push(`Certifico que realizei consulta ao Diario de Justica Eletronico referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
       linhas.push("");
       linhas.push("Apos a consulta, nao foi localizada publicacao correspondente no Diario de Justica Eletronico.");
       linhas.push("");
