@@ -2124,7 +2124,13 @@ const ModComunicaDJ = (() => {
     ADV_BLOCK_ATTR: "data-adv-publicacao",
     CERT_STATE_KEY: "__tmDjState",
     MODAL_ID: "tmDjCertidaoModal",
+    REQUEST_TIMEOUT_MS: 20000,
+    REQUEST_MAX_ATTEMPTS: 3,
+    REQUEST_RETRY_BASE_MS: 800,
+    REQUEST_RETRY_MAX_MS: 4000,
   };
+
+  const RETRYABLE_HTTP_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
   function dataBRparaISO(dataBR) {
     const m = String(dataBR || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -2208,38 +2214,124 @@ const ModComunicaDJ = (() => {
     );
   }
 
-  function gmGetJSON(url) {
-    const gmReq =
+  function resolveGmRequestApi(gmReqOverride) {
+    const gmReq = gmReqOverride ||
       (typeof GM_xmlhttpRequest === "function" && GM_xmlhttpRequest) ||
       (typeof GM !== "undefined" && GM && typeof GM.xmlHttpRequest === "function" && GM.xmlHttpRequest);
+    if (!gmReq) throw new Error("GM request API indisponivel");
+    return gmReq;
+  }
 
-    if (!gmReq) return Promise.reject(new Error("GM request API indisponivel"));
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 
+  function computeRetryDelayMs(attempt) {
+    const base = CFG.REQUEST_RETRY_BASE_MS * Math.pow(2, Math.max(0, attempt - 1));
+    const jitter = Math.floor(Math.random() * 250);
+    return Math.min(CFG.REQUEST_RETRY_MAX_MS, base + jitter);
+  }
+
+  function buildHttpError(url, res) {
+    const status = Number(res?.status || 0);
+    const err = new Error(`Http failure response for ${url}: ${status || "?"} ${res?.statusText || ""}`.trim());
+    err.name = "HttpErrorResponse";
+    err.url = url;
+    err.status = status;
+    err.statusText = res?.statusText || "";
+    err.responseText = String(res?.responseText || "");
+    err.errorKind = RETRYABLE_HTTP_STATUS.has(status) ? "http_retryable" : "http";
+    return err;
+  }
+
+  function buildNetworkError(kind, url, detail) {
+    const err = new Error(kind === "timeout" ? `Timeout while requesting ${url}` : `Network failure while requesting ${url}`);
+    err.name = kind === "timeout" ? "TimeoutError" : "NetworkError";
+    err.url = url;
+    err.status = 0;
+    err.statusText = "";
+    err.detail = detail || null;
+    err.errorKind = kind;
+    return err;
+  }
+
+  function buildParseError(url, res, cause) {
+    const err = new Error(`Invalid JSON response from ${url}`);
+    err.name = "ParseError";
+    err.url = url;
+    err.status = Number(res?.status || 0);
+    err.statusText = res?.statusText || "";
+    err.responseText = String(res?.responseText || "");
+    err.cause = cause;
+    err.errorKind = "parse";
+    return err;
+  }
+
+  function isRetryableError(err) {
+    if (!err) return false;
+    if (err.errorKind === "timeout" || err.errorKind === "network" || err.errorKind === "http_retryable") return true;
+    return RETRYABLE_HTTP_STATUS.has(Number(err.status || 0));
+  }
+
+  function describeError(err) {
+    if (!err) return "Erro desconhecido.";
+    if (err.errorKind === "timeout") return "timeout na API do Comunica.";
+    if (err.errorKind === "network") return "falha de conexao com a API do Comunica.";
+    if (err.errorKind === "parse") return "resposta invalida da API do Comunica.";
+    if (err.status) return `falha HTTP ${err.status}${err.statusText ? ` (${err.statusText})` : ""}.`;
+    return err.message || "Erro desconhecido.";
+  }
+
+  function getErrorStatusText(err) {
+    if (isRetryableError(err)) return "Advogados da comunicacao: API instavel ou indisponivel. Tente novamente.";
+    return "Advogados da comunicacao: erro ao consultar a API.";
+  }
+
+  function gmGetJSON(url, options = {}) {
+    const gmReq = resolveGmRequestApi(options.gmReq);
     return new Promise((resolve, reject) => {
       gmReq({
         method: "GET",
         url,
-        timeout: 20000,
+        timeout: CFG.REQUEST_TIMEOUT_MS,
         headers: { Accept: "application/json" },
         onload: (res) => {
+          const status = Number(res?.status || 0);
+          if (status < 200 || status >= 300) {
+            reject(buildHttpError(url, res));
+            return;
+          }
           try {
             resolve(JSON.parse(res.responseText));
           } catch (e) {
-            reject(e);
+            reject(buildParseError(url, res, e));
           }
         },
-        onerror: (err) => reject(err),
-        ontimeout: () => reject(new Error("timeout")),
+        onerror: (err) => reject(buildNetworkError("network", url, err)),
+        ontimeout: () => reject(buildNetworkError("timeout", url)),
       });
     });
   }
 
-  function requestJSON(url) {
-    if (
-      typeof GM_xmlhttpRequest === "function" ||
-      (typeof GM !== "undefined" && GM && typeof GM.xmlHttpRequest === "function")
-    ) return gmGetJSON(url);
-    return Promise.reject(new Error("GM request API indisponivel"));
+  async function requestJSON(url, options = {}) {
+    resolveGmRequestApi(options.gmReq);
+    const maxAttempts = Math.max(1, Number(options.maxAttempts || CFG.REQUEST_MAX_ATTEMPTS));
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await gmGetJSON(url, options);
+      } catch (err) {
+        err.attempt = attempt;
+        err.maxAttempts = maxAttempts;
+        if (attempt >= maxAttempts || !isRetryableError(err)) throw err;
+        const delayMs = typeof options.computeDelayMs === "function"
+          ? options.computeDelayMs(attempt, err)
+          : computeRetryDelayMs(attempt);
+        await wait(delayMs);
+      }
+    }
+
+    throw new Error("Falha inesperada ao consultar a API do Comunica");
   }
 
   function dedup(arr) {
@@ -2397,6 +2489,20 @@ const ModComunicaDJ = (() => {
     linhas.push("");
     linhas.push(`Certifico que, na data de ${dataDisp}, foi publicada no Diario de Justica Eletronico comunicacao referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
     linhas.push("");
+
+    if (state?.erro) {
+      linhas.length = 0;
+      linhas.push("");
+      linhas.push(`Certifico que realizei tentativa de consulta ao Diario de Justica Eletronico referente ao processo n. ${procMasc || "[numero nao identificado]"}.`);
+      linhas.push("");
+      linhas.push(`A consulta nao pode ser concluida por indisponibilidade tecnica da API do Comunica (${state?.erroDetalhe || "falha nao especificada"}).`);
+      linhas.push("");
+      linhas.push("A pesquisa devera ser renovada posteriormente.");
+      linhas.push("");
+      linhas.push("O referido e verdade. Dou fe.");
+      linhas.push("");
+      return linhas.join("\n");
+    }
 
     if (state?.publicacaoEncontrada === false) {
       linhas.length = 0;
@@ -2607,12 +2713,14 @@ const ModComunicaDJ = (() => {
       partes: [],
       advogados: [],
       erro: null,
+      erroDetalhe: null,
     });
 
     try {
       renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: consultando...");
       state.consultado = false;
       state.erro = null;
+      state.erroDetalhe = null;
 
       const json = await requestJSON(urlApi);
       const item = escolherItemDaResposta(json, numeroProcesso);
@@ -2624,6 +2732,7 @@ const ModComunicaDJ = (() => {
         state.advogados = [];
         state.dataDisponibilizacaoISO = null;
         state.dataDisponibilizacaoExtenso = null;
+        state.numeroProcessoMasc = null;
 
         renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: nao encontrados.");
       } else {
@@ -2654,12 +2763,16 @@ const ModComunicaDJ = (() => {
       U.err("[ComunicaDJ] Erro API:", e);
 
       state.consultado = true;
-      state.publicacaoEncontrada = false;
+      state.publicacaoEncontrada = null;
       state.advogados = [];
       state.partes = [];
       state.erro = "erro_api";
+      state.erroDetalhe = describeError(e);
+      state.dataDisponibilizacaoISO = null;
+      state.dataDisponibilizacaoExtenso = null;
+      state.numeroProcessoMasc = null;
 
-      renderAdvogadosEmLinhas(bloco, [], "Advogados da comunicacao: erro ao consultar a API.");
+      renderAdvogadosEmLinhas(bloco, [], getErrorStatusText(e));
 
       inserirBotaoCertidaoDepoisDoAdv(divDiario, () => {
         const st = divDiario[CFG.CERT_STATE_KEY];
@@ -2704,7 +2817,20 @@ const ModComunicaDJ = (() => {
     });
   }
 
-  return { NAME, init, apply };
+  const __testing = {
+    RETRYABLE_HTTP_STATUS,
+    computeRetryDelayMs,
+    buildHttpError,
+    buildNetworkError,
+    buildParseError,
+    isRetryableError,
+    describeError,
+    getErrorStatusText,
+    requestJSON,
+    montarCertidaoTexto,
+  };
+
+  return { NAME, init, apply, __testing };
 })();
 
 
