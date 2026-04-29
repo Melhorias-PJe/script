@@ -3,7 +3,7 @@
 // ==UserScript==
 // @name         PJe TJCE - Automação Unificada (1.1.10 modular)
 // @namespace    local.tjce.pje.unified.automacao
-// @version      1.1.10
+// @version      2.0
 // @description  (Build modular) Detecta tipo do select por opções (Meio x Comunicação), estabiliza 'Selecione' com fallback correto, reduz spam de toast e adiciona Copiar ID com ícone ao lado do link.
 // @match        https://pje.tjce.jus.br/pje1grau/*
 // @match        https://pje-treinamento-release.tjce.jus.br/pje1grau/*
